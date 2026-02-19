@@ -8,11 +8,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from lexibrarian.config.schema import TokenizerConfig
-from lexibrarian.tokenizer.approximate import ApproximateCounter
 from lexibrarian.tokenizer.anthropic_counter import AnthropicCounter
+from lexibrarian.tokenizer.approximate import ApproximateCounter
 from lexibrarian.tokenizer.factory import create_tokenizer
 from lexibrarian.tokenizer.tiktoken_counter import TiktokenCounter
-
 
 # === Approximate Backend Tests ===
 

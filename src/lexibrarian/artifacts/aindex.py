@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from lexibrarian.artifacts.design_file import StalenessMetadata
@@ -11,8 +13,8 @@ class AIndexEntry(BaseModel):
     """A single entry in a directory's .aindex file."""
 
     name: str
+    entry_type: Literal["file", "dir"]
     description: str
-    is_directory: bool
 
 
 class AIndexFile(BaseModel):

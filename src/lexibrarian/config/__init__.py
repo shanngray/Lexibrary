@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from lexibrarian.config.defaults import DEFAULT_PROJECT_CONFIG_TEMPLATE
-from lexibrarian.config.loader import load_config
+from lexibrarian.config.loader import find_config_file, load_config
 from lexibrarian.config.schema import (
     DaemonConfig,
     IgnoreConfig,
@@ -11,10 +11,12 @@ from lexibrarian.config.schema import (
     LLMConfig,
     MappingConfig,
     TokenBudgetConfig,
+    TokenizerConfig,
 )
 
 __all__ = [
     "DEFAULT_PROJECT_CONFIG_TEMPLATE",
+    "find_config_file",
     "load_config",
     "DaemonConfig",
     "IgnoreConfig",
@@ -22,4 +24,5 @@ __all__ = [
     "LLMConfig",
     "MappingConfig",
     "TokenBudgetConfig",
+    "TokenizerConfig",
 ]

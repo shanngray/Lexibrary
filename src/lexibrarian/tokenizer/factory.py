@@ -36,5 +36,8 @@ def create_tokenizer(config: TokenizerConfig) -> TokenCounter:
 
             return ApproximateCounter()
         case _:
-            msg = f"Unknown tokenizer backend: {config.backend!r}. Expected one of: 'tiktoken', 'anthropic_api', 'approximate'"
+            msg = (
+                f"Unknown tokenizer backend: {config.backend!r}."
+                " Expected one of: 'tiktoken', 'anthropic_api', 'approximate'"
+            )
             raise ValueError(msg)

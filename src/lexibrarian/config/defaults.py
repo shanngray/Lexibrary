@@ -49,4 +49,46 @@ daemon:
   debounce_seconds: 2.0                  # Coalesce rapid file events (seconds)
   sweep_interval_seconds: 300            # Full re-index safety net (seconds)
   enabled: true                          # Enable daemon on start
+
+# Crawl behaviour
+crawl:
+  binary_extensions:  # Extensions treated as binary
+    - .png
+    - .jpg
+    - .jpeg
+    - .gif
+    - .ico
+    - .svg
+    - .webp
+    - .mp3
+    - .mp4
+    - .wav
+    - .ogg
+    - .webm
+    - .woff
+    - .woff2
+    - .ttf
+    - .eot
+    - .zip
+    - .tar
+    - .gz
+    - .bz2
+    - .7z
+    - .rar
+    - .pdf
+    - .doc
+    - .docx
+    - .xls
+    - .xlsx
+    - .exe
+    - .dll
+    - .so
+    - .dylib
+    - .pyc
+    - .pyo
+    - .class
+    - .o
+    - .obj
+    - .sqlite
+    - .db
 """

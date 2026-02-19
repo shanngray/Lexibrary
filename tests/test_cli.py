@@ -87,6 +87,102 @@ class TestInit:
 
 
 # ---------------------------------------------------------------------------
+# Index command
+# ---------------------------------------------------------------------------
+
+def _setup_project(tmp_path: Path) -> Path:
+    """Create a minimal initialized project at tmp_path with some source files."""
+    (tmp_path / ".lexibrary").mkdir()
+    (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+    # Create source directory with a Python file
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "main.py").write_text("print('hello')\n")
+    (tmp_path / "src" / "utils.py").write_text("x = 1\ny = 2\n")
+    return tmp_path
+
+
+class TestIndexCommand:
+    """Tests for the `lexi index` command."""
+
+    def test_index_single_directory(self, tmp_path: Path) -> None:
+        _setup_project(tmp_path)
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            result = runner.invoke(app, ["index", "src"])
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0
+        assert "Wrote" in result.output
+        assert (tmp_path / ".lexibrary" / "src" / ".aindex").exists()
+
+    def test_index_recursive(self, tmp_path: Path) -> None:
+        _setup_project(tmp_path)
+        # Add a subdirectory
+        (tmp_path / "src" / "sub").mkdir()
+        (tmp_path / "src" / "sub" / "mod.py").write_text("a = 1\n")
+
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            result = runner.invoke(app, ["index", "-r", "."])
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0
+        assert "Indexing complete" in result.output
+        assert "directories indexed" in result.output
+        # Root and src and src/sub should all have .aindex files
+        assert (tmp_path / ".lexibrary" / "src" / ".aindex").exists()
+        assert (tmp_path / ".lexibrary" / "src" / "sub" / ".aindex").exists()
+        assert (tmp_path / ".lexibrary" / ".aindex").exists()
+
+    def test_index_missing_project(self, tmp_path: Path) -> None:
+        """Index should fail if no .lexibrary/ exists."""
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            result = runner.invoke(app, ["index", "."])
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1
+        assert "No .lexibrary/" in result.output
+
+    def test_index_missing_directory(self, tmp_path: Path) -> None:
+        """Index should fail if target directory does not exist."""
+        _setup_project(tmp_path)
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            result = runner.invoke(app, ["index", "nonexistent"])
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1
+        assert "Directory not found" in result.output
+
+    def test_index_outside_project_root(self, tmp_path: Path) -> None:
+        """Index should fail if target directory is outside the project root."""
+        project = tmp_path / "project"
+        project.mkdir()
+        _setup_project(project)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        old_cwd = os.getcwd()
+        os.chdir(project)
+        try:
+            result = runner.invoke(app, ["index", str(outside)])
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1
+        assert "outside the project root" in result.output
+
+
+# ---------------------------------------------------------------------------
 # Stub commands — should exit 0 with "Not yet implemented" when .lexibrary/ exists
 # ---------------------------------------------------------------------------
 
@@ -104,11 +200,6 @@ class TestStubCommands:
 
     def test_lookup_stub(self, tmp_path: Path) -> None:
         result = self._invoke_in_project(tmp_path, ["lookup", "foo.py"])
-        assert result.exit_code == 0  # type: ignore[union-attr]
-        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
-
-    def test_index_stub(self, tmp_path: Path) -> None:
-        result = self._invoke_in_project(tmp_path, ["index"])
         assert result.exit_code == 0  # type: ignore[union-attr]
         assert "Not yet implemented" in result.output  # type: ignore[union-attr]
 

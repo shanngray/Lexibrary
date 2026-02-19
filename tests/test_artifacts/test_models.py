@@ -90,7 +90,7 @@ class TestDesignFile:
 
 class TestAIndexFile:
     def test_minimal_valid(self) -> None:
-        entry = AIndexEntry(name="foo.py", description="A file", is_directory=False)
+        entry = AIndexEntry(name="foo.py", entry_type="file", description="A file")
         aindex = AIndexFile(
             directory_path="src/",
             billboard="Source code",
@@ -99,6 +99,14 @@ class TestAIndexFile:
         )
         assert len(aindex.entries) == 1
         assert aindex.local_conventions == []
+
+    def test_dir_entry_type(self) -> None:
+        entry = AIndexEntry(name="config", entry_type="dir", description="Contains 3 files")
+        assert entry.entry_type == "dir"
+
+    def test_invalid_entry_type_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            AIndexEntry(name="foo", entry_type="symlink", description="bad")  # type: ignore[arg-type]
 
     def test_entry_missing_field(self) -> None:
         with pytest.raises(ValidationError):

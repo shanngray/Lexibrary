@@ -7,6 +7,41 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class CrawlConfig(BaseModel):
+    """Crawl behaviour configuration."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    binary_extensions: list[str] = Field(
+        default_factory=lambda: [
+            # Images
+            ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".webp",
+            # Audio/video
+            ".mp3", ".mp4", ".wav", ".ogg", ".webm",
+            # Fonts
+            ".woff", ".woff2", ".ttf", ".eot",
+            # Archives
+            ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
+            # Documents
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx",
+            # Executables / compiled
+            ".exe", ".dll", ".so", ".dylib", ".pyc", ".pyo", ".class", ".o", ".obj",
+            # Database
+            ".sqlite", ".db",
+        ]
+    )
+
+
+class TokenizerConfig(BaseModel):
+    """Tokenizer configuration."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    backend: str = "tiktoken"
+    model: str = "cl100k_base"
+    max_tokens_per_chunk: int = 4000
+
+
 class LLMConfig(BaseModel):
     """LLM provider configuration."""
 
@@ -82,3 +117,4 @@ class LexibraryConfig(BaseModel):
     mapping: MappingConfig = Field(default_factory=MappingConfig)
     ignore: IgnoreConfig = Field(default_factory=IgnoreConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
+    crawl: CrawlConfig = Field(default_factory=CrawlConfig)

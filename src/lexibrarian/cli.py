@@ -108,9 +108,69 @@ def index(
         Path,
         typer.Argument(help="Directory to index."),
     ] = Path("."),
+    *,
+    recursive: Annotated[
+        bool,
+        typer.Option("-r", "--recursive", help="Recursively index all directories."),
+    ] = False,
 ) -> None:
-    """Return or generate the .aindex for a directory."""
-    _stub("index")
+    """Generate .aindex file(s) for a directory."""
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
+    from lexibrarian.config.loader import load_config
+    from lexibrarian.indexer.orchestrator import index_directory, index_recursive
+
+    project_root = _require_project_root()
+
+    # Resolve directory relative to cwd
+    target = Path(directory).resolve()
+
+    # Validate directory exists
+    if not target.exists():
+        console.print(f"[red]Directory not found:[/red] {directory}")
+        raise typer.Exit(1)
+
+    if not target.is_dir():
+        console.print(f"[red]Not a directory:[/red] {directory}")
+        raise typer.Exit(1)
+
+    # Validate directory is within project root
+    try:
+        target.relative_to(project_root)
+    except ValueError:
+        console.print(
+            f"[red]Directory is outside the project root:[/red] {directory}\n"
+            f"Project root: {project_root}"
+        )
+        raise typer.Exit(1) from None
+
+    config = load_config(project_root)
+
+    if recursive:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Indexing...", total=None)
+
+            def _progress_callback(current: int, total: int, name: str) -> None:
+                progress.update(task, description=f"Indexing [{current}/{total}] {name}")
+
+            stats = index_recursive(
+                target, project_root, config, progress_callback=_progress_callback
+            )
+
+        console.print(
+            f"\n[green]Indexing complete.[/green] "
+            f"{stats.directories_indexed} directories indexed, "
+            f"{stats.files_found} files found"
+            + (f", [red]{stats.errors} errors[/red]" if stats.errors else "")
+            + "."
+        )
+    else:
+        output_path = index_directory(target, project_root, config)
+        console.print(f"[green]Wrote[/green] {output_path}")
 
 
 @app.command()

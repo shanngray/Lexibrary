@@ -17,7 +17,7 @@ def test_config_patterns_match(tmp_path: Path) -> None:
     config = IgnoreConfig()
     spec = load_config_patterns(config)
 
-    assert spec.match_file(".aindex")
+    assert spec.match_file(".lexibrary/src/.aindex")
     assert spec.match_file("node_modules/foo")
     assert spec.match_file("file.lock")
     assert not spec.match_file("src/main.py")
@@ -100,7 +100,7 @@ def test_create_ignore_matcher_with_gitignore(tmp_path: Path) -> None:
     matcher = create_ignore_matcher(config, tmp_path)
 
     # Config patterns should work
-    assert matcher.is_ignored(tmp_path / ".aindex")
+    assert matcher.is_ignored(tmp_path / ".lexibrary" / "src" / ".aindex")
 
     # Gitignore patterns should work
     assert matcher.is_ignored(tmp_path / "test.pyc")
@@ -119,7 +119,7 @@ def test_create_ignore_matcher_without_gitignore(tmp_path: Path) -> None:
     matcher = create_ignore_matcher(config, tmp_path)
 
     # Config patterns should work
-    assert matcher.is_ignored(tmp_path / ".aindex")
+    assert matcher.is_ignored(tmp_path / ".lexibrary" / "src" / ".aindex")
 
     # Gitignore patterns should NOT work
     assert not matcher.is_ignored(tmp_path / "test.pyc")

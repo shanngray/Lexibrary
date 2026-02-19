@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from lexibrarian.config.schema import (
+    CrawlConfig,
     DaemonConfig,
     IgnoreConfig,
     LexibraryConfig,
@@ -74,3 +75,24 @@ def test_extra_fields_ignored() -> None:
     config = LLMConfig.model_validate({"provider": "x", "unknown": "y"})
     assert config.provider == "x"
     assert not hasattr(config, "unknown")
+
+
+def test_crawl_config_defaults() -> None:
+    config = CrawlConfig()
+    for ext in (".png", ".jpg", ".pyc", ".zip", ".exe", ".pdf", ".mp4"):
+        assert ext in config.binary_extensions
+
+
+def test_crawl_config_custom_extensions() -> None:
+    config = LexibraryConfig.model_validate({"crawl": {"binary_extensions": [".bin"]}})
+    assert config.crawl.binary_extensions == [".bin"]
+
+
+def test_crawl_config_extra_fields_ignored() -> None:
+    config = CrawlConfig.model_validate({"unknown_field": "value"})
+    assert not hasattr(config, "unknown_field")
+
+
+def test_lexibrary_config_has_crawl() -> None:
+    config = LexibraryConfig()
+    assert isinstance(config.crawl, CrawlConfig)

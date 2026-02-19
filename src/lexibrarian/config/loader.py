@@ -15,6 +15,32 @@ _XDG_CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config
 GLOBAL_CONFIG_PATH = _XDG_CONFIG_HOME / "lexibrarian" / "config.yaml"
 
 
+def find_config_file(start_dir: Path | None = None) -> Path | None:
+    """Search for .lexibrary/config.yaml starting from start_dir and walking upward.
+
+    Args:
+        start_dir: Directory to start search from. Defaults to current working directory.
+
+    Returns:
+        Path to config.yaml if found, None otherwise.
+    """
+    start_dir = Path.cwd() if start_dir is None else Path(start_dir).resolve()
+
+    current = start_dir
+    while True:
+        config_path = current / ".lexibrary" / "config.yaml"
+        if config_path.exists():
+            return config_path
+
+        # Stop at filesystem root
+        if current.parent == current:
+            break
+
+        current = current.parent
+
+    return None
+
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     """Load a YAML file and return its contents as a dict."""
     with open(path) as f:
