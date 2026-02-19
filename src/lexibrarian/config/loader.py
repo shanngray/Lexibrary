@@ -2,65 +2,62 @@
 
 from __future__ import annotations
 
-import tomllib
+import os
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from lexibrarian.config.schema import LexibraryConfig
 
-
-def find_config_file(start_dir: Path | None = None) -> Path | None:
-    """
-    Search for lexibrary.toml starting from start_dir and walking upward.
-
-    Args:
-        start_dir: Directory to start search from. Defaults to current working directory.
-
-    Returns:
-        Path to lexibrary.toml if found, None otherwise.
-    """
-    start_dir = Path.cwd() if start_dir is None else Path(start_dir).resolve()
-
-    current = start_dir
-    while True:
-        config_path = current / "lexibrary.toml"
-        if config_path.exists():
-            return config_path
-
-        # Stop at filesystem root
-        if current.parent == current:
-            break
-
-        current = current.parent
-
-    return None
+# XDG base directory default
+_XDG_CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+GLOBAL_CONFIG_PATH = _XDG_CONFIG_HOME / "lexibrarian" / "config.yaml"
 
 
-def load_config(config_path: Path | None = None) -> LexibraryConfig:
-    """
-    Load and validate configuration from a TOML file.
+def _load_yaml(path: Path) -> dict[str, Any]:
+    """Load a YAML file and return its contents as a dict."""
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    return data if isinstance(data, dict) else {}
+
+
+def load_config(
+    project_root: Path | None = None,
+    global_config_path: Path | None = None,
+) -> LexibraryConfig:
+    """Load and validate configuration with two-tier YAML merge.
+
+    Merge strategy: load global config → load project config → shallow merge
+    with project values taking precedence → validate with Pydantic.
 
     Args:
-        config_path: Path to config file. If None, searches for lexibrary.toml
-                    using find_config_file(). If not found, returns defaults.
+        project_root: Project root directory containing ``.lexibrary/config.yaml``.
+            If None, no project config is loaded.
+        global_config_path: Override for the global config path (useful for testing).
+            Defaults to ``~/.config/lexibrarian/config.yaml``.
 
     Returns:
         Validated LexibraryConfig instance.
 
     Raises:
-        pydantic.ValidationError: If config file contains invalid values.
+        pydantic.ValidationError: If merged config contains invalid values.
     """
-    # If no path provided, search for config file
-    if config_path is None:
-        config_path = find_config_file()
+    global_path = global_config_path if global_config_path is not None else GLOBAL_CONFIG_PATH
+    project_path = project_root / ".lexibrary" / "config.yaml" if project_root else None
 
-    # If no config file found, return all defaults
-    if config_path is None or not config_path.exists():
-        return LexibraryConfig()
+    # Load global config
+    global_data: dict[str, Any] = {}
+    if global_path.exists():
+        global_data = _load_yaml(global_path)
 
-    # Load and parse TOML file
-    with open(config_path, "rb") as f:
-        config_data: dict[str, Any] = tomllib.load(f)
+    # Load project config
+    project_data: dict[str, Any] = {}
+    if project_path is not None and project_path.exists():
+        project_data = _load_yaml(project_path)
 
-    # Validate and return config (Pydantic handles merging with defaults)
-    return LexibraryConfig.model_validate(config_data)
+    # Shallow merge: project top-level keys override global
+    merged = {**global_data, **project_data}
+
+    # Validate and return
+    return LexibraryConfig.model_validate(merged)

@@ -15,10 +15,12 @@ from lexibrarian.crawler.discovery import (
 )
 from lexibrarian.crawler.file_reader import read_file_for_indexing
 from lexibrarian.ignore.matcher import IgnoreMatcher
-from lexibrarian.indexer import DirEntry, FileEntry, IandexData
-from lexibrarian.indexer.generator import generate_iandex
-from lexibrarian.indexer.parser import parse_iandex
-from lexibrarian.indexer.writer import write_iandex
+
+# v1 indexer retired in Phase 1 — crawler will be reworked in a later phase.
+# from lexibrarian.indexer import DirEntry, FileEntry, IandexData
+# from lexibrarian.indexer.generator import generate_iandex
+# from lexibrarian.indexer.parser import parse_iandex
+# from lexibrarian.indexer.writer import write_iandex
 from lexibrarian.llm.service import (
     DirectorySummaryRequest,
     FileSummaryRequest,

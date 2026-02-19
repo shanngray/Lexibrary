@@ -1,62 +1,57 @@
-"""Configuration schema with Pydantic models."""
+"""Configuration schema with Pydantic 2 models."""
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LLMConfig(BaseModel):
     """LLM provider configuration."""
 
+    model_config = ConfigDict(extra="ignore")
+
     provider: str = "anthropic"
-    model: str = "claude-sonnet-4-5-20250514"
+    model: str = "claude-sonnet-4-6"
     api_key_env: str = "ANTHROPIC_API_KEY"
     max_retries: int = 3
     timeout: int = 60
 
 
-class TokenizerConfig(BaseModel):
-    """Tokenizer configuration."""
+class TokenBudgetConfig(BaseModel):
+    """Per-artifact token budget configuration."""
 
-    backend: str = "tiktoken"
-    model: str = "cl100k_base"
-    max_tokens_per_chunk: int = 4000
+    model_config = ConfigDict(extra="ignore")
+
+    start_here_tokens: int = 800
+    handoff_tokens: int = 100
+    design_file_tokens: int = 400
+    design_file_abridged_tokens: int = 100
+    aindex_tokens: int = 200
+    concept_file_tokens: int = 400
 
 
-class CrawlConfig(BaseModel):
-    """Crawling behavior configuration."""
+class MappingConfig(BaseModel):
+    """Mapping strategy configuration (stub for Phase 1)."""
 
-    max_file_size_kb: int = 512
-    max_files_per_llm_batch: int = 10
-    summary_max_tokens: int = 80
-    dir_summary_max_tokens: int = 150
-    binary_extensions: list[str] = Field(
-        default_factory=lambda: [
-            # Images
-            ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg", ".webp",
-            # Audio/Video
-            ".mp3", ".wav", ".mp4", ".avi", ".mov",
-            # Archives
-            ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
-            # Compiled
-            ".pyc", ".pyo", ".so", ".dll", ".dylib", ".o", ".a",
-            ".class", ".jar", ".wasm",
-            # Fonts
-            ".woff", ".woff2", ".ttf", ".otf", ".eot",
-            # Other binary
-            ".pdf", ".exe", ".bin", ".dat", ".db", ".sqlite",
-        ]
-    )
+    model_config = ConfigDict(extra="ignore")
+
+    strategies: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class IgnoreConfig(BaseModel):
     """Ignore pattern configuration."""
 
+    model_config = ConfigDict(extra="ignore")
+
     use_gitignore: bool = True
     additional_patterns: list[str] = Field(
         default_factory=lambda: [
-            ".aindex",
-            "lexibrary.toml",
+            ".lexibrary/START_HERE.md",
+            ".lexibrary/HANDOFF.md",
+            ".lexibrary/**/*.md",
+            ".lexibrary/**/.aindex",
             "node_modules/",
             "__pycache__/",
             ".git/",
@@ -70,24 +65,20 @@ class IgnoreConfig(BaseModel):
 class DaemonConfig(BaseModel):
     """Daemon watch configuration."""
 
+    model_config = ConfigDict(extra="ignore")
+
     debounce_seconds: float = 2.0
     sweep_interval_seconds: int = 300
-
-
-class OutputConfig(BaseModel):
-    """Output file configuration."""
-
-    index_filename: str = ".aindex"
-    cache_filename: str = ".lexibrarian_cache.json"
-    log_filename: str = ".lexibrarian.log"
+    enabled: bool = True
 
 
 class LexibraryConfig(BaseModel):
     """Top-level Lexibrarian configuration."""
 
+    model_config = ConfigDict(extra="ignore")
+
     llm: LLMConfig = Field(default_factory=LLMConfig)
-    tokenizer: TokenizerConfig = Field(default_factory=TokenizerConfig)
-    crawl: CrawlConfig = Field(default_factory=CrawlConfig)
+    token_budgets: TokenBudgetConfig = Field(default_factory=TokenBudgetConfig)
+    mapping: MappingConfig = Field(default_factory=MappingConfig)
     ignore: IgnoreConfig = Field(default_factory=IgnoreConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
-    output: OutputConfig = Field(default_factory=OutputConfig)

@@ -2,28 +2,24 @@
 
 from __future__ import annotations
 
-from lexibrarian.config.defaults import DEFAULT_CONFIG_TEMPLATE, render_default_config
-from lexibrarian.config.loader import find_config_file, load_config
+from lexibrarian.config.defaults import DEFAULT_PROJECT_CONFIG_TEMPLATE
+from lexibrarian.config.loader import load_config
 from lexibrarian.config.schema import (
-    CrawlConfig,
     DaemonConfig,
     IgnoreConfig,
     LexibraryConfig,
     LLMConfig,
-    OutputConfig,
-    TokenizerConfig,
+    MappingConfig,
+    TokenBudgetConfig,
 )
 
 __all__ = [
-    "DEFAULT_CONFIG_TEMPLATE",
-    "render_default_config",
-    "find_config_file",
+    "DEFAULT_PROJECT_CONFIG_TEMPLATE",
     "load_config",
-    "CrawlConfig",
     "DaemonConfig",
     "IgnoreConfig",
     "LexibraryConfig",
     "LLMConfig",
-    "OutputConfig",
-    "TokenizerConfig",
+    "MappingConfig",
+    "TokenBudgetConfig",
 ]

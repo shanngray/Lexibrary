@@ -1,34 +1,39 @@
-"""Path utilities for project root discovery."""
+"""Path construction utilities for the .lexibrary/ output tree."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+LEXIBRARY_DIR = ".lexibrary"
 
-def find_project_root(start: Path | None = None) -> Path:
-    """
-    Find project root by walking upward looking for .git or lexibrary.toml.
+
+def mirror_path(project_root: Path, source_file: Path) -> Path:
+    """Compute the design-file mirror path for a source file.
+
+    Maps ``src/auth/login.py`` → ``.lexibrary/src/auth/login.py.md``.
 
     Args:
-        start: Directory to start search from. Defaults to current working directory.
+        project_root: Absolute path to the project root.
+        source_file: Absolute or project-relative path to a source file.
 
     Returns:
-        Path to project root directory. Falls back to current working directory
-        if no root markers found.
+        Absolute path to the mirrored design file inside ``.lexibrary/``.
     """
-    start = Path.cwd() if start is None else Path(start).resolve()
+    relative = source_file.relative_to(project_root) if source_file.is_absolute() else source_file
+    return project_root / LEXIBRARY_DIR / f"{relative}.md"
 
-    current = start
-    while True:
-        # Check for root markers
-        if (current / ".git").exists() or (current / "lexibrary.toml").exists():
-            return current
 
-        # Stop at filesystem root
-        if current.parent == current:
-            break
+def aindex_path(project_root: Path, directory: Path) -> Path:
+    """Compute the ``.aindex`` path for a directory.
 
-        current = current.parent
+    Maps ``src/auth/`` → ``.lexibrary/src/auth/.aindex``.
 
-    # No root found, return current working directory
-    return Path.cwd()
+    Args:
+        project_root: Absolute path to the project root.
+        directory: Absolute or project-relative path to a directory.
+
+    Returns:
+        Absolute path to the ``.aindex`` file inside ``.lexibrary/``.
+    """
+    relative = directory.relative_to(project_root) if directory.is_absolute() else directory
+    return project_root / LEXIBRARY_DIR / relative / ".aindex"

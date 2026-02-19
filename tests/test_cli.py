@@ -1,10 +1,9 @@
-"""Tests for the CLI application."""
+"""Tests for the v2 CLI application."""
 
 from __future__ import annotations
 
-import json
+import os
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
@@ -13,221 +12,171 @@ from lexibrarian.cli import app
 runner = CliRunner()
 
 
-# -- Init command tests --
-
-
-class TestInit:
-    def test_init_creates_config(self, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["init", str(tmp_path)])
-        assert result.exit_code == 0
-        config_path = tmp_path / "lexibrary.toml"
-        assert config_path.exists()
-        content = config_path.read_text(encoding="utf-8")
-        assert 'provider = "anthropic"' in content
-        assert 'model = "claude-sonnet-4-5-20250514"' in content
-
-    def test_init_already_exists(self, tmp_path: Path) -> None:
-        config_path = tmp_path / "lexibrary.toml"
-        config_path.write_text("existing", encoding="utf-8")
-        result = runner.invoke(app, ["init", str(tmp_path)])
-        assert result.exit_code == 1
-        assert "already exists" in result.output
-        # File should not be modified
-        assert config_path.read_text(encoding="utf-8") == "existing"
-
-    def test_init_provider_openai(self, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["init", str(tmp_path), "--provider", "openai"])
-        assert result.exit_code == 0
-        content = (tmp_path / "lexibrary.toml").read_text(encoding="utf-8")
-        assert 'provider = "openai"' in content
-        assert 'model = "gpt-4o-mini"' in content
-
-    def test_init_creates_gitignore(self, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["init", str(tmp_path)])
-        assert result.exit_code == 0
-        gitignore = tmp_path / ".gitignore"
-        assert gitignore.exists()
-        content = gitignore.read_text(encoding="utf-8")
-        assert ".aindex" in content
-        assert ".lexibrarian_cache.json" in content
-        assert ".lexibrarian.log" in content
-        assert ".lexibrarian.pid" in content
-
-    def test_init_updates_gitignore(self, tmp_path: Path) -> None:
-        gitignore = tmp_path / ".gitignore"
-        gitignore.write_text("node_modules/\n", encoding="utf-8")
-        result = runner.invoke(app, ["init", str(tmp_path)])
-        assert result.exit_code == 0
-        content = gitignore.read_text(encoding="utf-8")
-        # Original content preserved
-        assert "node_modules/" in content
-        # New entries added
-        assert ".aindex" in content
-        assert "# Lexibrary" in content
-
-    def test_init_does_not_duplicate_gitignore_entries(self, tmp_path: Path) -> None:
-        gitignore = tmp_path / ".gitignore"
-        gitignore.write_text(
-            ".aindex\n.lexibrarian_cache.json\n.lexibrarian.log\n.lexibrarian.pid\n",
-            encoding="utf-8",
-        )
-        result = runner.invoke(app, ["init", str(tmp_path)])
-        assert result.exit_code == 0
-        content = gitignore.read_text(encoding="utf-8")
-        # Should not have duplicate entries
-        assert content.count(".aindex") == 1
-
-    def test_init_shows_next_steps(self, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["init", str(tmp_path)])
-        assert result.exit_code == 0
-        assert "Next steps" in result.output
-        assert "lexibrary.toml" in result.output
-        assert "lexi crawl" in result.output
-
-
-# -- Crawl command tests --
-
-
-class TestCrawl:
-    def test_crawl_dry_run(self, tmp_path: Path) -> None:
-        # Create a minimal config
-        config_content = '[llm]\nprovider = "anthropic"\n'
-        (tmp_path / "lexibrary.toml").write_text(config_content, encoding="utf-8")
-        (tmp_path / "hello.py").write_text("print('hello')", encoding="utf-8")
-
-        from lexibrarian.crawler.engine import CrawlStats
-
-        mock_stats = CrawlStats(
-            directories_indexed=1,
-            files_summarized=1,
-            files_cached=0,
-            files_skipped=0,
-            llm_calls=2,
-            errors=0,
-        )
-
-        with (
-            patch("lexibrarian.ignore.create_ignore_matcher"),
-            patch("lexibrarian.tokenizer.create_tokenizer"),
-            patch("lexibrarian.llm.create_llm_service"),
-            patch("lexibrarian.crawler.change_detector.ChangeDetector"),
-            patch(
-                "lexibrarian.crawler.full_crawl", new_callable=AsyncMock, return_value=mock_stats
-            ),
-        ):
-            result = runner.invoke(app, ["crawl", str(tmp_path), "--dry-run"])
-
-        assert result.exit_code == 0
-        assert "Dry run" in result.output
-
-
-# -- Status command tests --
-
-
-class TestStatus:
-    def test_status_no_config(self, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["status", str(tmp_path)])
-        assert result.exit_code == 0
-        assert "not found (using defaults)" in result.output
-        assert "Lexibrarian Status" in result.output
-
-    def test_status_with_cache(self, tmp_path: Path) -> None:
-        # Create a config file
-        (tmp_path / "lexibrary.toml").write_text(
-            '[llm]\nprovider = "anthropic"\n', encoding="utf-8"
-        )
-
-        # Create a cache file with entries
-        cache_data = {
-            "version": 1,
-            "files": {
-                str(tmp_path / "existing.py"): {
-                    "hash": "abc123",
-                    "tokens": 50,
-                    "summary": "A test file",
-                    "last_indexed": "2024-01-01T00:00:00",
-                },
-            },
-        }
-        (tmp_path / ".lexibrarian_cache.json").write_text(json.dumps(cache_data), encoding="utf-8")
-
-        result = runner.invoke(app, ["status", str(tmp_path)])
-        assert result.exit_code == 0
-        assert "Lexibrarian Status" in result.output
-        # The cached file doesn't exist, so it's stale
-        assert "1" in result.output  # stale count
-
-    def test_status_daemon_not_running(self, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["status", str(tmp_path)])
-        assert result.exit_code == 0
-        assert "not running" in result.output
-
-    def test_status_stale_pid_file(self, tmp_path: Path) -> None:
-        # Write a PID that doesn't correspond to a running process
-        pid_path = tmp_path / ".lexibrarian.pid"
-        pid_path.write_text("999999999", encoding="utf-8")
-        result = runner.invoke(app, ["status", str(tmp_path)])
-        assert result.exit_code == 0
-        assert "stale PID file" in result.output
-
-
-# -- Clean command tests --
-
-
-class TestClean:
-    def test_clean_removes_files(self, tmp_path: Path) -> None:
-        # Create files to clean
-        (tmp_path / ".aindex").write_text("index", encoding="utf-8")
-        sub = tmp_path / "sub"
-        sub.mkdir()
-        (sub / ".aindex").write_text("index", encoding="utf-8")
-        (tmp_path / ".lexibrarian_cache.json").write_text("{}", encoding="utf-8")
-        (tmp_path / ".lexibrarian.log").write_text("log", encoding="utf-8")
-
-        result = runner.invoke(app, ["clean", str(tmp_path), "--yes"])
-        assert result.exit_code == 0
-        assert "Removed" in result.output
-        assert not (tmp_path / ".aindex").exists()
-        assert not (sub / ".aindex").exists()
-        assert not (tmp_path / ".lexibrarian_cache.json").exists()
-        assert not (tmp_path / ".lexibrarian.log").exists()
-
-    def test_clean_nothing_to_clean(self, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["clean", str(tmp_path)])
-        assert result.exit_code == 0
-        assert "Nothing to clean" in result.output
-
-
-# -- Daemon command tests --
-
-
-class TestDaemon:
-    def test_daemon_without_foreground(self, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["daemon", str(tmp_path)])
-        assert result.exit_code == 0
-        assert "not yet supported" in result.output
-
-    def test_daemon_foreground_starts_service(self, tmp_path: Path) -> None:
-        (tmp_path / "lexibrary.toml").write_text("", encoding="utf-8")
-
-        with patch("lexibrarian.daemon.DaemonService") as mock_cls:
-            mock_svc = mock_cls.return_value
-            result = runner.invoke(app, ["daemon", str(tmp_path), "--foreground"])
-
-        assert result.exit_code == 0
-        mock_cls.assert_called_once()
-        mock_svc.start.assert_called_once()
-
-
-# -- Help / integration tests --
-
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
 
 class TestHelp:
     def test_help_lists_all_commands(self) -> None:
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "init" in result.output
-        assert "crawl" in result.output
-        assert "status" in result.output
-        assert "clean" in result.output
-        assert "daemon" in result.output
+        for cmd in (
+            "init", "lookup", "index", "concepts", "guardrails",
+            "search", "update", "validate", "status", "setup", "daemon",
+            "guardrail",
+        ):
+            assert cmd in result.output
+
+    def test_help_mentions_lexibrary(self) -> None:
+        result = runner.invoke(app, ["--help"])
+        assert ".lexibrary/" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Init
+# ---------------------------------------------------------------------------
+
+class TestInit:
+    def test_init_creates_skeleton(self, tmp_path: Path, monkeypatch: object) -> None:
+        import pytest  # noqa: F811
+        monkeypatch_ = pytest.MonkeyPatch()  # type: ignore[attr-defined]
+        monkeypatch_.chdir(tmp_path)
+        result = runner.invoke(app, ["init"])
+        monkeypatch_.undo()
+
+        assert result.exit_code == 0
+        assert "Created" in result.output
+        assert (tmp_path / ".lexibrary" / "config.yaml").exists()
+        assert (tmp_path / ".lexibrary" / "START_HERE.md").exists()
+        assert (tmp_path / ".lexibrary" / "HANDOFF.md").exists()
+        assert (tmp_path / ".lexibrary" / "concepts" / ".gitkeep").exists()
+        assert (tmp_path / ".lexibrary" / "guardrails" / ".gitkeep").exists()
+
+    def test_init_idempotent(self, tmp_path: Path) -> None:
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("existing")
+        (tmp_path / ".lexibrary" / "START_HERE.md").write_text("existing")
+        (tmp_path / ".lexibrary" / "HANDOFF.md").write_text("existing")
+        (tmp_path / ".lexibrary" / "concepts").mkdir()
+        (tmp_path / ".lexibrary" / "concepts" / ".gitkeep").touch()
+        (tmp_path / ".lexibrary" / "guardrails").mkdir()
+        (tmp_path / ".lexibrary" / "guardrails" / ".gitkeep").touch()
+
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            result = runner.invoke(app, ["init"])
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0
+        assert "already exists" in result.output
+        # Files not overwritten
+        assert (tmp_path / ".lexibrary" / "config.yaml").read_text() == "existing"
+
+    def test_init_agent_flag(self, tmp_path: Path) -> None:
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            result = runner.invoke(app, ["init", "--agent", "claude"])
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0
+        assert "lexi setup claude" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Stub commands — should exit 0 with "Not yet implemented" when .lexibrary/ exists
+# ---------------------------------------------------------------------------
+
+class TestStubCommands:
+    """All non-init commands should print stub and exit 0 with project root."""
+
+    def _invoke_in_project(self, tmp_path: Path, args: list[str]) -> object:
+        (tmp_path / ".lexibrary").mkdir(exist_ok=True)
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return runner.invoke(app, args)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_lookup_stub(self, tmp_path: Path) -> None:
+        result = self._invoke_in_project(tmp_path, ["lookup", "foo.py"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+
+    def test_index_stub(self, tmp_path: Path) -> None:
+        result = self._invoke_in_project(tmp_path, ["index"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+
+    def test_concepts_stub(self, tmp_path: Path) -> None:
+        result = self._invoke_in_project(tmp_path, ["concepts"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+
+    def test_guardrails_stub(self, tmp_path: Path) -> None:
+        result = self._invoke_in_project(tmp_path, ["guardrails"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+
+    def test_search_stub(self, tmp_path: Path) -> None:
+        result = self._invoke_in_project(tmp_path, ["search"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+
+    def test_update_stub(self, tmp_path: Path) -> None:
+        result = self._invoke_in_project(tmp_path, ["update"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+
+    def test_validate_stub(self, tmp_path: Path) -> None:
+        result = self._invoke_in_project(tmp_path, ["validate"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+
+    def test_status_stub(self, tmp_path: Path) -> None:
+        result = self._invoke_in_project(tmp_path, ["status"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+
+    def test_setup_stub(self, tmp_path: Path) -> None:
+        result = self._invoke_in_project(tmp_path, ["setup"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+
+    def test_daemon_stub(self, tmp_path: Path) -> None:
+        result = self._invoke_in_project(tmp_path, ["daemon"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# Commands without .lexibrary/ should exit 1 with friendly error
+# ---------------------------------------------------------------------------
+
+class TestNoProjectRoot:
+    def _invoke_without_project(self, tmp_path: Path, args: list[str]) -> object:
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return runner.invoke(app, args)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_status_no_project_root(self, tmp_path: Path) -> None:
+        result = self._invoke_without_project(tmp_path, ["status"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "No .lexibrary/" in result.output  # type: ignore[union-attr]
+
+    def test_validate_no_project_root(self, tmp_path: Path) -> None:
+        result = self._invoke_without_project(tmp_path, ["validate"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "lexi init" in result.output  # type: ignore[union-attr]
+
+    def test_daemon_no_project_root(self, tmp_path: Path) -> None:
+        result = self._invoke_without_project(tmp_path, ["daemon"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "No .lexibrary/" in result.output  # type: ignore[union-attr]

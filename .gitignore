@@ -4,6 +4,13 @@
 .lexibrarian.log
 baml_client/
 
+# .lexibrary/ generated artifacts (config.yaml is tracked)
+.lexibrary/START_HERE.md
+.lexibrary/HANDOFF.md
+.lexibrary/**/*.md
+.lexibrary/**/.aindex
+!.lexibrary/config.yaml
+
 # Python
 __pycache__/
 *.py[cod]
@@ -63,4 +70,3 @@ Lexibrarian.code-workspace
 .claude/
 .cursor/
 scripts/
-plans/

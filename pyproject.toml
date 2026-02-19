@@ -19,6 +19,8 @@ dependencies = [
     "baml-py>=0.218.0,<0.219.0",
     # -- Phase 7: Daemon --
     "watchdog>=6.0.0,<7.0.0",
+    # -- Config (YAML) --
+    "PyYAML>=6.0.0,<7.0.0",
 ]
 
 [project.optional-dependencies]
@@ -84,4 +86,5 @@ select = [
 dev = [
     "openai>=2.20.0",
     "python-dotenv>=1.2.1",
+    "types-pyyaml>=6.0.12.20250915",
 ]

@@ -1,4 +1,4 @@
-"""Tests for configuration schema."""
+"""Tests for v2 configuration schema."""
 
 from __future__ import annotations
 
@@ -6,74 +6,71 @@ import pytest
 from pydantic import ValidationError
 
 from lexibrarian.config.schema import (
-    CrawlConfig,
     DaemonConfig,
     IgnoreConfig,
     LexibraryConfig,
     LLMConfig,
-    OutputConfig,
-    TokenizerConfig,
+    MappingConfig,
+    TokenBudgetConfig,
 )
 
 
 def test_llm_config_defaults() -> None:
-    """LLMConfig should have Anthropic defaults."""
     config = LLMConfig()
     assert config.provider == "anthropic"
-    assert config.model == "claude-sonnet-4-5-20250514"
+    assert config.model == "claude-sonnet-4-6"
     assert config.api_key_env == "ANTHROPIC_API_KEY"
     assert config.max_retries == 3
     assert config.timeout == 60
 
 
-def test_crawl_config_defaults() -> None:
-    """CrawlConfig should have reasonable limits."""
-    config = CrawlConfig()
-    assert config.max_file_size_kb == 512
-    assert config.max_files_per_llm_batch == 10
-    assert config.summary_max_tokens == 80
-    assert config.dir_summary_max_tokens == 150
+def test_token_budget_defaults() -> None:
+    config = TokenBudgetConfig()
+    assert config.start_here_tokens == 800
+    assert config.design_file_tokens == 400
+
+
+def test_mapping_config_defaults() -> None:
+    config = MappingConfig()
+    assert config.strategies == []
 
 
 def test_ignore_config_defaults() -> None:
-    """IgnoreConfig should include common patterns."""
     config = IgnoreConfig()
     assert config.use_gitignore is True
-    assert ".aindex" in config.additional_patterns
-    assert "lexibrary.toml" in config.additional_patterns
     assert "node_modules/" in config.additional_patterns
     assert "__pycache__/" in config.additional_patterns
 
 
+def test_daemon_config_defaults() -> None:
+    config = DaemonConfig()
+    assert config.debounce_seconds == 2.0
+    assert config.sweep_interval_seconds == 300
+    assert config.enabled is True
+
+
 def test_lexibrary_config_validates_all_subconfigs() -> None:
-    """LexibraryConfig should validate all sub-configs."""
     config = LexibraryConfig()
     assert isinstance(config.llm, LLMConfig)
-    assert isinstance(config.tokenizer, TokenizerConfig)
-    assert isinstance(config.crawl, CrawlConfig)
+    assert isinstance(config.token_budgets, TokenBudgetConfig)
+    assert isinstance(config.mapping, MappingConfig)
     assert isinstance(config.ignore, IgnoreConfig)
     assert isinstance(config.daemon, DaemonConfig)
-    assert isinstance(config.output, OutputConfig)
 
 
 def test_lexibrary_config_partial_override() -> None:
-    """LexibraryConfig should merge partial config with defaults."""
     config = LexibraryConfig.model_validate({"llm": {"provider": "openai"}})
     assert config.llm.provider == "openai"
-    # Other fields should use defaults
     assert config.llm.max_retries == 3
-    assert config.crawl.max_file_size_kb == 512
+    assert config.daemon.enabled is True
 
 
-def test_crawl_config_invalid_type_raises_validation_error() -> None:
-    """Invalid config values should raise ValidationError."""
+def test_invalid_type_raises_validation_error() -> None:
     with pytest.raises(ValidationError):
-        CrawlConfig(max_file_size_kb="not_a_number")  # type: ignore
+        LLMConfig(max_retries="not_a_number")  # type: ignore[arg-type]
 
 
-def test_llm_config_custom_values() -> None:
-    """LLMConfig should accept custom values."""
-    config = LLMConfig(provider="ollama", model="llama2", max_retries=5)
-    assert config.provider == "ollama"
-    assert config.model == "llama2"
-    assert config.max_retries == 5
+def test_extra_fields_ignored() -> None:
+    config = LLMConfig.model_validate({"provider": "x", "unknown": "y"})
+    assert config.provider == "x"
+    assert not hasattr(config, "unknown")

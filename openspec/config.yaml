@@ -18,3 +18,4 @@ rules:
   tasks:
     - Cross-reference the relevant phase plan in plans/ for scope boundaries
     - Each task should be independently completable
+    - Run `/opsx:sync-beads <change-name>` immediately after tasks.md is finalized to create beads

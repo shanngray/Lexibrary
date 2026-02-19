@@ -1,17 +1,27 @@
-"""Tests for path utilities."""
+"""Tests for path utilities — root resolution and mirror tree construction."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from lexibrarian.utils.paths import find_project_root
+import pytest
+
+from lexibrarian.exceptions import LexibraryNotFoundError
+from lexibrarian.utils.paths import aindex_path, mirror_path
+from lexibrarian.utils.root import find_project_root
 
 
-def test_find_project_root_with_git(tmp_path: Path) -> None:
-    """find_project_root should find .git directory."""
-    git_dir = tmp_path / ".git"
-    git_dir.mkdir()
+def test_find_project_root_in_cwd(tmp_path: Path) -> None:
+    """find_project_root should find .lexibrary/ in the start directory."""
+    (tmp_path / ".lexibrary").mkdir()
 
+    result = find_project_root(tmp_path)
+    assert result == tmp_path
+
+
+def test_find_project_root_in_parent(tmp_path: Path) -> None:
+    """find_project_root should walk up to find .lexibrary/."""
+    (tmp_path / ".lexibrary").mkdir()
     subdir = tmp_path / "src" / "nested"
     subdir.mkdir(parents=True)
 
@@ -19,49 +29,57 @@ def test_find_project_root_with_git(tmp_path: Path) -> None:
     assert result == tmp_path
 
 
-def test_find_project_root_with_lexibrary_toml(tmp_path: Path) -> None:
-    """find_project_root should find lexibrary.toml."""
-    config_file = tmp_path / "lexibrary.toml"
-    config_file.write_text("")
-
-    subdir = tmp_path / "src" / "nested"
-    subdir.mkdir(parents=True)
-
-    result = find_project_root(subdir)
-    assert result == tmp_path
-
-
-def test_find_project_root_no_markers(tmp_path: Path) -> None:
-    """find_project_root should return cwd when no markers found."""
+def test_find_project_root_not_found(tmp_path: Path) -> None:
+    """find_project_root should raise LexibraryNotFoundError when not found."""
     subdir = tmp_path / "some" / "nested" / "dir"
     subdir.mkdir(parents=True)
 
-    result = find_project_root(subdir)
-    # Should fall back to current working directory
-    assert result == Path.cwd()
+    with pytest.raises(LexibraryNotFoundError):
+        find_project_root(subdir)
 
 
-def test_find_project_root_closest_marker(tmp_path: Path) -> None:
-    """find_project_root should return closest marker."""
-    # Root has .git
-    root_git = tmp_path / ".git"
-    root_git.mkdir()
-
-    # Nested dir has lexibrary.toml
+def test_find_project_root_nearest(tmp_path: Path) -> None:
+    """find_project_root should return the nearest .lexibrary/ directory."""
+    (tmp_path / ".lexibrary").mkdir()
     nested = tmp_path / "project"
     nested.mkdir()
-    nested_config = nested / "lexibrary.toml"
-    nested_config.write_text("")
+    (nested / ".lexibrary").mkdir()
 
-    # Should find the closest one (nested)
     result = find_project_root(nested / "src")
     assert result == nested
 
 
-def test_find_project_root_from_root_directory(tmp_path: Path) -> None:
-    """find_project_root should work when called from root directory."""
-    config_file = tmp_path / "lexibrary.toml"
-    config_file.write_text("")
+# ---------------------------------------------------------------------------
+# mirror_path / aindex_path
+# ---------------------------------------------------------------------------
 
-    result = find_project_root(tmp_path)
-    assert result == tmp_path
+
+def test_mirror_path_simple(tmp_path: Path) -> None:
+    """mirror_path maps a source file into .lexibrary/ with .md suffix."""
+    result = mirror_path(tmp_path, tmp_path / "src" / "auth" / "login.py")
+    assert result == tmp_path / ".lexibrary" / "src" / "auth" / "login.py.md"
+
+
+def test_mirror_path_relative(tmp_path: Path) -> None:
+    """mirror_path accepts a project-relative path."""
+    result = mirror_path(tmp_path, Path("src/auth/login.py"))
+    assert result == tmp_path / ".lexibrary" / "src" / "auth" / "login.py.md"
+
+
+def test_mirror_path_deeply_nested(tmp_path: Path) -> None:
+    """mirror_path preserves full directory depth."""
+    result = mirror_path(tmp_path, Path("backend/api/v2/users/controller.py"))
+    expected = tmp_path / ".lexibrary" / "backend" / "api" / "v2" / "users" / "controller.py.md"
+    assert result == expected
+
+
+def test_aindex_path_simple(tmp_path: Path) -> None:
+    """aindex_path maps a directory to .lexibrary/<dir>/.aindex."""
+    result = aindex_path(tmp_path, tmp_path / "src" / "auth")
+    assert result == tmp_path / ".lexibrary" / "src" / "auth" / ".aindex"
+
+
+def test_aindex_path_relative(tmp_path: Path) -> None:
+    """aindex_path accepts a project-relative path."""
+    result = aindex_path(tmp_path, Path("src/auth"))
+    assert result == tmp_path / ".lexibrary" / "src" / "auth" / ".aindex"
