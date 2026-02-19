@@ -107,6 +107,17 @@ class DaemonConfig(BaseModel):
     enabled: bool = True
 
 
+class ASTConfig(BaseModel):
+    """AST-based interface extraction configuration."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    languages: list[str] = Field(
+        default_factory=lambda: ["python", "typescript", "javascript"]
+    )
+
+
 class LexibraryConfig(BaseModel):
     """Top-level Lexibrarian configuration."""
 
@@ -118,3 +129,4 @@ class LexibraryConfig(BaseModel):
     ignore: IgnoreConfig = Field(default_factory=IgnoreConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
     crawl: CrawlConfig = Field(default_factory=CrawlConfig)
+    ast: ASTConfig = Field(default_factory=ASTConfig)

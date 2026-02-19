@@ -32,3 +32,17 @@ def hash_file(file_path: Path, chunk_size: int = 8192) -> str:
             sha256.update(chunk)
 
     return sha256.hexdigest()
+
+
+def hash_string(text: str) -> str:
+    """Compute SHA-256 hash of a string.
+
+    Encodes the string as UTF-8 before hashing.
+
+    Args:
+        text: String to hash.
+
+    Returns:
+        64-character hexadecimal string (SHA-256 digest).
+    """
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()

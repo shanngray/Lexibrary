@@ -6,12 +6,14 @@
 
 | Name | Key Fields | Purpose |
 | --- | --- | --- |
+| `CrawlConfig` | `binary_extensions: list[str]` | Crawl behaviour — file types to treat as binary |
+| `TokenizerConfig` | `backend`, `model`, `max_tokens_per_chunk` | Tokenizer backend selection |
 | `LLMConfig` | `provider`, `model`, `api_key_env`, `max_retries`, `timeout` | LLM provider settings |
 | `TokenBudgetConfig` | `start_here_tokens`, `handoff_tokens`, `design_file_tokens`, `aindex_tokens`, `concept_file_tokens` | Per-artifact token budgets |
 | `MappingConfig` | `strategies: list[dict]` | Mapping strategy config (stub for Phase 1) |
 | `IgnoreConfig` | `use_gitignore: bool`, `additional_patterns: list[str]` | Ignore pattern settings |
 | `DaemonConfig` | `debounce_seconds`, `sweep_interval_seconds`, `enabled` | Daemon watch settings |
-| `LexibraryConfig` | `llm`, `token_budgets`, `mapping`, `ignore`, `daemon` | Top-level config container |
+| `LexibraryConfig` | `llm`, `token_budgets`, `mapping`, `ignore`, `daemon`, `crawl` | Top-level config container |
 
 ## Dependencies
 
@@ -23,9 +25,9 @@
 - `lexibrarian.config.__init__` — re-exports all models
 - `lexibrarian.ignore.patterns` — consumes `IgnoreConfig`
 - `lexibrarian.llm.factory` — consumes `LLMConfig`
-- `lexibrarian.tokenizer.factory` — expects `TokenizerConfig` (not yet defined here)
+- `lexibrarian.indexer.orchestrator` — consumes `LexibraryConfig` (accesses `config.crawl.binary_extensions`)
 
 ## Dragons
 
-- `TokenizerConfig`, `CrawlConfig`, and `OutputConfig` are referenced in `crawler/engine.py` and `daemon/service.py` but **not yet defined** in this file — these must be added before the crawler or daemon can run
 - All models use `extra="ignore"` so unknown YAML keys are silently dropped
+- `crawler/engine.py` still references `config.crawl.max_file_size_kb`, `config.crawl.max_files_per_llm_batch`, and `config.output.index_filename` which are not yet defined — engine will not import cleanly until these are added

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,6 +9,7 @@ from lexibrarian.artifacts.aindex import AIndexEntry, AIndexFile
 from lexibrarian.artifacts.aindex_parser import parse_aindex
 from lexibrarian.artifacts.design_file import StalenessMetadata
 from lexibrarian.ignore.matcher import IgnoreMatcher
+from lexibrarian.utils.hashing import hash_string
 from lexibrarian.utils.languages import EXTENSION_MAP
 
 _GENERATOR_ID = "lexibrarian-v2"
@@ -77,7 +77,7 @@ def _generate_billboard(entries: list[AIndexEntry]) -> str:
 def _compute_dir_hash(names: list[str]) -> str:
     """SHA-256 of the sorted directory listing."""
     content = "\n".join(sorted(names))
-    return hashlib.sha256(content.encode()).hexdigest()
+    return hash_string(content)
 
 
 def generate_aindex(

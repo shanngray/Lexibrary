@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: AIndexEntry Pydantic model
 The system SHALL provide an `AIndexEntry` Pydantic 2 model in `src/lexibrarian/artifacts/aindex.py` with the following fields:

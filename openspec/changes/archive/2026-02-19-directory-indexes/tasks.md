@@ -8,15 +8,15 @@
 
 ## 2. Artifact Serializer
 
-- [ ] 2.1 Create `src/lexibrarian/artifacts/aindex_serializer.py` with `serialize_aindex(data: AIndexFile) -> str`
-- [ ] 2.2 Implement v2 format: H1 heading, billboard, Child Map table (files before dirs, alphabetical each group), Local Conventions section, staleness metadata HTML comment footer
-- [ ] 2.3 Create `tests/test_artifacts/test_aindex_serializer.py` with all serializer scenarios from spec
+- [x] 2.1 Create `src/lexibrarian/artifacts/aindex_serializer.py` with `serialize_aindex(data: AIndexFile) -> str`
+- [x] 2.2 Implement v2 format: H1 heading, billboard, Child Map table (files before dirs, alphabetical each group), Local Conventions section, staleness metadata HTML comment footer
+- [x] 2.3 Create `tests/test_artifacts/test_aindex_serializer.py` with all serializer scenarios from spec
 
 ## 3. Artifact Parser
 
-- [ ] 3.1 Create `src/lexibrarian/artifacts/aindex_parser.py` with `parse_aindex(path: Path) -> AIndexFile | None`
-- [ ] 3.2 Implement `parse_aindex_metadata(path: Path) -> StalenessMetadata | None` in same module
-- [ ] 3.3 Create `tests/test_artifacts/test_aindex_parser.py` with all parser scenarios from spec
+- [x] 3.1 Create `src/lexibrarian/artifacts/aindex_parser.py` with `parse_aindex(path: Path) -> AIndexFile | None`
+- [x] 3.2 Implement `parse_aindex_metadata(path: Path) -> StalenessMetadata | None` in same module
+- [x] 3.3 Create `tests/test_artifacts/test_aindex_parser.py` with all parser scenarios from spec
 
 ## 4. Round-Trip Test
 
@@ -31,12 +31,12 @@
 
 ## 6. Index Generator
 
-- [ ] 6.1 Create `src/lexibrarian/indexer/__init__.py` (module init)
-- [ ] 6.2 Create `src/lexibrarian/indexer/generator.py` with `generate_aindex()` function and extension-to-language mapping
-- [ ] 6.3 Implement file description logic: language + line count for text files, binary description for binary extensions
-- [ ] 6.4 Implement directory description logic: use child `.aindex` entry counts if available, fall back to direct listing
-- [ ] 6.5 Implement billboard generation: dominant language, mixed-language, binary-only, or empty directory
-- [ ] 6.6 Create `tests/test_indexer/test_generator.py` with all generator scenarios from spec (using `tmp_path`)
+- [x] 6.1 Create `src/lexibrarian/indexer/__init__.py` (module init)
+- [x] 6.2 Create `src/lexibrarian/indexer/generator.py` with `generate_aindex()` function and extension-to-language mapping
+- [x] 6.3 Implement file description logic: language + line count for text files, binary description for binary extensions
+- [x] 6.4 Implement directory description logic: use child `.aindex` entry counts if available, fall back to direct listing
+- [x] 6.5 Implement billboard generation: dominant language, mixed-language, binary-only, or empty directory
+- [x] 6.6 Create `tests/test_indexer/test_generator.py` with all generator scenarios from spec (using `tmp_path`)
 
 ## 7. Index Orchestrator
 

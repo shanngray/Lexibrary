@@ -1,7 +1,7 @@
 # Handoff
 
-**Task:** Create blueprints/ design documentation for all src/lexibrarian modules
-**Status:** Complete — all design files created for v1.1 codebase
-**Next step:** Run `lexi update` once schema is complete to generate .lexibrary/ artifacts
-**Key files:** `blueprints/START_HERE.md`, `blueprints/src/lexibrarian/config/schema.md`, `blueprints/src/lexibrarian/crawler/engine.md`
-**Watch out:** `config/schema.py` is missing `TokenizerConfig`, `CrawlConfig`, `OutputConfig` — engine.py and daemon/service.py will fail until these are added
+**Task:** Update blueprints/ design documentation to reflect current codebase state
+**Status:** Complete — all design files created/updated; `lexi init` and `lexi index [-r]` are fully implemented
+**Next step:** Implement remaining stub CLI commands; start with `lexi update` (re-index changed files)
+**Key files:** `blueprints/src/lexibrarian/indexer/orchestrator.md`, `blueprints/src/lexibrarian/crawler/engine.md`, `blueprints/src/lexibrarian/config/schema.md`
+**Watch out:** `crawler/engine.py` is broken — references v1 indexer types (`IandexData`, `FileEntry`, `DirEntry`) and missing config fields (`config.output`); use `indexer/orchestrator.py` for indexing work

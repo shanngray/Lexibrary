@@ -24,6 +24,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ast = [
+    "tree-sitter>=0.25.0,<0.26.0",
+    "tree-sitter-python>=0.25.0,<0.26.0",
+    "tree-sitter-javascript>=0.25.0,<0.26.0",
+    "tree-sitter-typescript>=0.23.0,<0.24.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=6.0.0",
@@ -69,6 +75,15 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "lexibrarian.daemon.service"
 ignore_errors = true
+
+# tree-sitter grammar packages are C extensions without type stubs
+[[tool.mypy.overrides]]
+module = [
+    "tree_sitter_python",
+    "tree_sitter_typescript",
+    "tree_sitter_javascript",
+]
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100

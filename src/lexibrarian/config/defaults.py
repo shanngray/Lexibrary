@@ -91,4 +91,12 @@ crawl:
     - .obj
     - .sqlite
     - .db
+
+# AST-based interface extraction
+ast:
+  enabled: true                          # Enable interface skeleton extraction
+  languages:                             # Languages to extract interfaces from
+    - python
+    - typescript
+    - javascript
 """
