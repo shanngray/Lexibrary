@@ -64,17 +64,13 @@ The system SHALL provide a `should_descend(directory)` method that enables crawl
 - **THEN** it returns True, signaling crawler to traverse its contents
 
 ### Requirement: Factory function for matcher creation
-The system SHALL provide `create_ignore_matcher(config, root)` that assembles an IgnoreMatcher from configuration and project .gitignore files.
+`create_ignore_matcher(config, root)` assembles IgnoreMatcher from config, `.gitignore` files, and `.lexignore` file. The `IgnoreMatcher` constructor SHALL accept a `lexignore_patterns: list[str]` parameter. The factory SHALL load `.lexignore` from the project root (if it exists) and pass its patterns alongside `.gitignore` and config patterns. Respects `config.ignore.use_gitignore` flag.
 
-#### Scenario: Matcher respects config.ignore.use_gitignore flag
-- **WHEN** config.ignore.use_gitignore is False
-- **THEN** `create_ignore_matcher()` does not load any .gitignore files
+#### Scenario: Matcher created with all three layers
+- **WHEN** `create_ignore_matcher()` is called and `.gitignore`, `.lexignore`, and config patterns all exist
+- **THEN** the IgnoreMatcher SHALL combine patterns from all three sources
 
-#### Scenario: Matcher respects config.ignore.use_gitignore flag when true
-- **WHEN** config.ignore.use_gitignore is True
-- **THEN** `create_ignore_matcher()` discovers and loads all .gitignore files
-
-#### Scenario: Matcher combines gitignore and config patterns
-- **WHEN** calling `is_ignored()` on the returned matcher
-- **THEN** it checks both .gitignore patterns and config patterns correctly
+#### Scenario: Matcher created without .lexignore
+- **WHEN** `create_ignore_matcher()` is called and no `.lexignore` exists
+- **THEN** the IgnoreMatcher SHALL use only `.gitignore` and config patterns without error
 

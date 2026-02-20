@@ -14,3 +14,28 @@ class BatchFileSummary {
   filename string
   summary string
 }
+
+// Archivist types — Phase 4
+
+class DesignFileDependency {
+  path string
+  description string
+}
+
+class DesignFileOutput {
+  summary string
+  interface_contract string
+  dependencies DesignFileDependency[]
+  tests string?
+  complexity_warning string?
+  wikilinks string[]
+  tags string[]
+}
+
+class StartHereOutput {
+  topology string
+  ontology string
+  navigation_by_intent string
+  convention_index string
+  navigation_protocol string
+}

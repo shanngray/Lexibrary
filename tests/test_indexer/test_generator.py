@@ -235,3 +235,121 @@ class TestGenerateAIndexMetadata:
         (src / "new.py").write_text("x\n", encoding="utf-8")
         r2 = generate_aindex(src, tmp_path, _matcher(tmp_path), _BINARY_EXTS)
         assert r1.metadata.source_hash != r2.metadata.source_hash
+
+
+def _create_design_file(tmp_path: Path, rel_source: str, description: str) -> None:
+    """Helper: create a minimal design file at the .lexibrary mirror path."""
+    design_path = tmp_path / ".lexibrary" / (rel_source + ".md")
+    design_path.parent.mkdir(parents=True, exist_ok=True)
+    frontmatter = (
+        "---\n"
+        f"description: {description}\n"
+        "updated_by: archivist\n"
+        "---\n"
+        "\n"
+        f"# {rel_source}\n"
+        "\n"
+        "## Interface Contract\n"
+        "\n"
+        "```python\n"
+        "def example() -> None: ...\n"
+        "```\n"
+        "\n"
+        "## Dependencies\n"
+        "\n"
+        "(none)\n"
+        "\n"
+        "## Dependents\n"
+        "\n"
+        "(none)\n"
+        "\n"
+        "<!-- lexibrarian:meta\n"
+        f"source: {rel_source}\n"
+        "source_hash: abc123\n"
+        "design_hash: def456\n"
+        "generated: 2026-01-01T00:00:00\n"
+        "generator: lexibrarian-v2\n"
+        "-->\n"
+    )
+    design_path.write_text(frontmatter, encoding="utf-8")
+
+
+class TestGenerateAIndexFrontmatterDescription:
+    """Tests for design file frontmatter description integration."""
+
+    def test_frontmatter_description_used(self, tmp_path: Path) -> None:
+        """File with a design file gets the frontmatter description."""
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "main.py").write_text("line1\nline2\nline3\n", encoding="utf-8")
+
+        # Create design file with a description
+        _create_design_file(tmp_path, "src/main.py", "Entry point for the application")
+
+        result = generate_aindex(src, tmp_path, _matcher(tmp_path), _BINARY_EXTS)
+        entry = next(e for e in result.entries if e.name == "main.py")
+        assert entry.description == "Entry point for the application"
+
+    def test_structural_fallback_when_no_design_file(self, tmp_path: Path) -> None:
+        """File without a design file gets the structural description."""
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "utils.py").write_text("x\ny\n", encoding="utf-8")
+
+        # No design file created — should fall back to structural
+        result = generate_aindex(src, tmp_path, _matcher(tmp_path), _BINARY_EXTS)
+        entry = next(e for e in result.entries if e.name == "utils.py")
+        assert entry.description == "Python source (2 lines)"
+
+    def test_empty_description_falls_back_to_structural(self, tmp_path: Path) -> None:
+        """File whose design file has an empty description gets structural fallback."""
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "empty.py").write_text("a\nb\nc\nd\n", encoding="utf-8")
+
+        # Create design file with empty description
+        _create_design_file(tmp_path, "src/empty.py", "")
+
+        result = generate_aindex(src, tmp_path, _matcher(tmp_path), _BINARY_EXTS)
+        entry = next(e for e in result.entries if e.name == "empty.py")
+        assert entry.description == "Python source (4 lines)"
+
+    def test_whitespace_only_description_falls_back_to_structural(self, tmp_path: Path) -> None:
+        """File whose design file has whitespace-only description gets structural fallback."""
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "blank.py").write_text("x\n", encoding="utf-8")
+
+        # Create design file with whitespace-only description
+        _create_design_file(tmp_path, "src/blank.py", "   ")
+
+        result = generate_aindex(src, tmp_path, _matcher(tmp_path), _BINARY_EXTS)
+        entry = next(e for e in result.entries if e.name == "blank.py")
+        assert entry.description == "Python source (1 lines)"
+
+    def test_frontmatter_description_strips_whitespace(self, tmp_path: Path) -> None:
+        """Frontmatter description is stripped of leading/trailing whitespace."""
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "padded.py").write_text("x\n", encoding="utf-8")
+
+        _create_design_file(tmp_path, "src/padded.py", "  Padded description  ")
+
+        result = generate_aindex(src, tmp_path, _matcher(tmp_path), _BINARY_EXTS)
+        entry = next(e for e in result.entries if e.name == "padded.py")
+        assert entry.description == "Padded description"
+
+    def test_mixed_files_with_and_without_design_files(self, tmp_path: Path) -> None:
+        """Directory with some files having design files and some not."""
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "documented.py").write_text("x\n", encoding="utf-8")
+        (src / "undocumented.py").write_text("y\nz\n", encoding="utf-8")
+
+        _create_design_file(tmp_path, "src/documented.py", "Well-documented module")
+
+        result = generate_aindex(src, tmp_path, _matcher(tmp_path), _BINARY_EXTS)
+        documented = next(e for e in result.entries if e.name == "documented.py")
+        undocumented = next(e for e in result.entries if e.name == "undocumented.py")
+        assert documented.description == "Well-documented module"
+        assert undocumented.description == "Python source (2 lines)"

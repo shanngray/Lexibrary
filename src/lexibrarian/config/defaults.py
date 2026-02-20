@@ -7,6 +7,10 @@ DEFAULT_PROJECT_CONFIG_TEMPLATE = """\
 # This file is created by `lexi init` and lives at .lexibrary/config.yaml
 # Values here override the global config at ~/.config/lexibrarian/config.yaml
 
+# Scope root: only files under this path (relative to project root) get design files
+# Set to "src/" to restrict design file generation to your source directory
+scope_root: "."
+
 # LLM provider settings
 llm:
   provider: anthropic                    # LLM provider: anthropic, openai, ollama
@@ -52,6 +56,7 @@ daemon:
 
 # Crawl behaviour
 crawl:
+  max_file_size_kb: 512               # Files larger than this (KB) are skipped during update
   binary_extensions:  # Extensions treated as binary
     - .png
     - .jpg

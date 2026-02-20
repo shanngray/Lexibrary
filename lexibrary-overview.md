@@ -64,6 +64,18 @@ A separate, standalone file that acts as a **post-it note passed from one agent 
 
 **Purpose:** Explain the *intent* of code, not just the syntax.
 
+### Authoring model: agent-first, Archivist as backup
+
+Design files are primarily authored by **the agent writing the code** — it has the best context for explaining *why* a change was made. The Archivist (LLM pipeline) is a safety net that catches files agents forgot to document.
+
+The workflow:
+1. Agent edits source code → agent also updates the corresponding design file
+2. `lexi update` runs later → detects whether the agent already updated the design file
+3. If agent updated → refresh tracking hashes only (no LLM call)
+4. If agent forgot → run the Archivist LLM to generate/update the design file
+
+Agent environment rules (§8) instruct agents to update design files during coding sessions.
+
 ### Hybrid mirroring (configurable)
 
 The default is a **1-to-1 mirror structure** — deterministic and unambiguous. If an agent is looking at `src/auth/login.py`, it can algorithmically predict the design file is at `.lexibrary/src/auth/login.py.md`. No search needed.
@@ -80,9 +92,25 @@ However, not every file warrants a full design file. Lexibrarian supports config
 
 These strategies are configured in `.lexibrary/config.yaml` via glob patterns. The default is 1:1 for everything; users tune from there.
 
-### Content of a design file
+### Scope root
 
-- **Summary** — one sentence on what this module does.
+`scope_root` in config (default: project root) controls which files get design files. Files outside `scope_root` appear in `.aindex` directory listings (agents can see they exist) but don't get design files. This allows projects to focus documentation on their core code (e.g., `src/`) without generating design files for config, scripts, or other peripheral files.
+
+### Design file format
+
+Design files have three sections with distinct ownership:
+
+**YAML frontmatter** (agent-editable):
+```yaml
+---
+description: "Single sentence summary of what this file does."
+updated_by: archivist  # "archivist" or "agent"
+---
+```
+
+The `description` field is the canonical short description — it propagates to `.aindex` Child Map entries. Agents should keep it current when editing the design file.
+
+**Markdown body** (agent-editable):
 - **Interface Contract** — inputs (arguments) and outputs (return types / side effects). Crucial for preventing hallucinations.
 - **Dependencies** — what external services or local modules this file touches.
 - **Dependents** — what depends on this file (reverse links).
@@ -90,11 +118,25 @@ These strategies are configured in `.lexibrary/config.yaml` via glob patterns. T
 - **Complexity Warning** — flagged note if the file contains legacy code or dragons.
 - **Wikilinks** — `[[ConceptName]]` tags linking to relevant concepts, conventions, or decisions.
 - **Tags** — lightweight labels for search and filtering (e.g., `auth`, `security`, `jwt`). Complements wikilinks — tags enable `lexi search --tag auth` without requiring graph traversal.
-- **Purpose / Future Direction** — why this exists and where it's headed (future direction could also be tracked as issues via Beads).
+- **Guardrails** — cross-references to relevant guardrail threads.
+
+**HTML comment footer** (machine-managed):
+```html
+<!-- lexibrarian:meta
+source: src/services/auth_service.py
+source_hash: a3f2b8c1
+interface_hash: 7e2d4f90
+design_hash: c4d5e6f7
+generated: 2026-01-15T10:30:00Z
+generator: lexibrarian v0.2.0
+-->
+```
+
+The `design_hash` is the hash of the design file content (frontmatter + body, excluding footer) at the time the Archivist last wrote it. If the current file hashes differently, an agent has edited it — `lexi update` detects this and skips LLM regeneration.
 
 ### Auto-generation
 
-Use AST parsing (Tree-sitter) to auto-generate the skeleton of design files (function signatures, class names, interface contracts). An LLM fills in descriptions only when the code actually changes, as determined by change detection.
+Use AST parsing (Tree-sitter) to auto-generate the skeleton of design files (function signatures, class names, interface contracts). An LLM fills in descriptions only when the code actually changes, as determined by change detection. Non-code files (YAML, markdown, configs) also get design files using content-only change detection (no interface hash).
 
 ### Dependents: reverse-index discovery
 
@@ -111,8 +153,8 @@ The reverse index is cached and updated incrementally when files change. Without
 
 Every directory in the library contains an `.aindex` file enabling agents to traverse the codebase tree without loading leaf nodes.
 
-- **Billboard** — explains the purpose of the directory (e.g., "All React components related to User Settings").
-- **Child Map** — a 3-column table (`Name`, `Type`, `Description`) listing every file and subdirectory. Files listed before directories, each group sorted alphabetically. No token count column — token budgets are validated at the artifact level, not per-entry.
+- **Billboard** — explains the purpose of the directory (e.g., "All React components related to User Settings"). Written once when the directory is first indexed; not auto-updated on subsequent runs (a directory's purpose rarely changes). `lexi describe <dir> "..."` is available for manual updates.
+- **Child Map** — a 3-column table (`Name`, `Type`, `Description`) listing every file and subdirectory. Files listed before directories, each group sorted alphabetically. No token count column — token budgets are validated at the artifact level, not per-entry. **File descriptions are extracted from the YAML frontmatter `description` field of the corresponding design file** (with a structural fallback when no design file exists yet). This means `.aindex` descriptions get richer as design files are created.
 - **Local Conventions** *(optional)* — scoped conventions and contextual warnings that apply within this directory. Things an agent should know *given where it's working right now*, but that aren't universally true across the project.
 
 ### Local Conventions: conditional conventions
@@ -310,8 +352,9 @@ Internal refactors that don't change the public interface get a lighter touch (u
 1. **Trigger** — file save detected by daemon (watchdog + debounce) or manual `lexi update` invocation.
 2. **Detection** — SHA-256 content hash compared to stored hash. If unchanged, skip.
 3. **Analysis** — if content changed, check interface hash:
-   - **Interface unchanged** — lightweight description update only.
-   - **Interface changed** — full design file regeneration via AST parse + LLM.
+   - **Non-code file** (no interface hash) — full design file regeneration (`CONTENT_CHANGED`).
+   - **Interface unchanged** — lightweight description update only (`CONTENT_ONLY`).
+   - **Interface changed** — full design file regeneration via AST parse + LLM (`INTERFACE_CHANGED`).
 4. **Action** — the Archivist (specialised LLM prompt) reads the diff, reads the existing design file, rewrites it. Updates the `.aindex` if files were added/deleted.
 5. **Commit** — updated library files committed alongside code changes (or on next commit).
 
@@ -337,10 +380,13 @@ Every generated artifact includes a metadata footer for change tracking:
 source: src/services/auth_service.py
 source_hash: a3f2b8c1
 interface_hash: 7e2d4f90
+design_hash: c4d5e6f7
 generated: 2026-01-15T10:30:00Z
-generator: lexibrarian v0.1.0
+generator: lexibrarian v0.2.0
 -->
 ```
+
+- **`design_hash`** — SHA-256 of the design file content (frontmatter + body, excluding the footer itself) at the time the Archivist last wrote it. If the current file content hashes differently, an agent or human has edited the design file since the Archivist last ran. `lexi update` uses this to detect agent edits and skip unnecessary LLM regeneration.
 
 A staleness check compares `source_hash` against the current file. If they diverge and no update has run, the artifact is flagged:
 
@@ -430,9 +476,10 @@ The auto-installed rules tell the agent:
 
 - Always read `.lexibrary/START_HERE.md` and `.lexibrary/HANDOFF.md` at session start.
 - Before editing a file, run `lexi lookup <file>` to load its design file.
+- **After editing a file, update its design file directly** — you have the best context for explaining *why* the change was made. Update the YAML frontmatter `description` and the markdown body. Set `updated_by: agent` in frontmatter.
 - Before making architectural decisions, run `lexi concepts <topic>` to check for existing conventions/decisions.
 - After encountering an error, run `lexi guardrail new --file <file> --mistake "..." --resolution "..."` to record it.
-- After making changes, run `lexi update` to regenerate affected design files.
+- Run `lexi update` as a safety net to catch any design files you forgot to update. **Important: `lexi update` is the backup, not the primary path.** Direct design file editing (above) must come first — if agents skip it and rely solely on `lexi update`, every changed file incurs an unnecessary LLM call.
 - Before ending a session, overwrite `.lexibrary/HANDOFF.md` with current task state, status, next step, key files, and any gotchas for the next agent.
 
 ### Updatable
@@ -460,13 +507,14 @@ lexi init [--agent cursor|claude|codex]   Initialise library in current project
 lexi setup <env> [--update]               Install/update agent environment rules
 lexi lookup <file>                        Return design file for a source file
 lexi index <directory> [-r]               Return .aindex for a directory (-r for recursive)
+lexi describe <directory> "description"   Update billboard description in .aindex
 lexi concepts [<topic>]                   List or search concept files
 lexi guardrails [--scope <path>] [--concept <name>]
                                           Search guardrail threads
 lexi guardrail new --file <f> --mistake "..." --resolution "..."
                                           Record a new guardrail thread
 lexi search --tag <t> [--scope <path>]    Search by tags across the library
-lexi update [<path>]                      Re-index changed files
+lexi update [<path>]                      Generate/refresh design files (Archivist backup)
 lexi validate                             Run consistency checks on library
 lexi status                               Show library health / staleness
 ```
@@ -477,7 +525,7 @@ lexi status                               Show library health / staleness
 
 - **Build system** — hatchling, src layout (`src/lexibrarian/`).
 - **Global install** — `pipx install lexibrarian` or `uv tool install lexibrarian`. The `lexi` command goes on PATH.
-- **Per-project init** — `lexi init` creates the `.lexibrary/` directory and its structure. Config is version-controlled with the project.
+- **Per-project init** — `lexi init` creates the `.lexibrary/` directory, its structure, and an empty `.lexignore` file. Config is version-controlled with the project.
 - **Not a project dependency** — Lexibrarian never appears in a project's `requirements.txt` or `pyproject.toml` dependencies. It's a tool, not a library.
 - **Project root resolution** — CLI walks up from CWD to find `.lexibrary/`, like git finds `.git/`.
 - **Multi-repo awareness** — MVP targets single-repo projects. Multi-repo support is a fast-follow: a root `.lexibrary/config.yaml` references child repos, `START_HERE.md` spans all of them, and the knowledge graph links concepts across repo boundaries. The initial architecture (wikilinks, relative paths, per-project config) is designed to extend to multi-repo without structural changes.
@@ -508,19 +556,35 @@ Project config overrides global config where they overlap. Global config provide
 `lexi init` creates the following structure at the project root:
 
 ```
-.lexibrary/
-  config.yaml          # project config (version controlled)
-  START_HERE.md        # bootloader — agent entry point
-  HANDOFF.md           # session relay — agent-to-agent post-it note
-  concepts/            # concept files (cross-cutting knowledge)
-  guardrails/          # guardrail threads (recorded mistakes + fixes)
-  src/                 # design file mirror tree
-    auth/
-      .aindex
-      login.py.md
+project-root/
+  .lexignore             # Lexibrarian-specific ignore patterns (gitignore format)
+  .lexibrary/
+    config.yaml          # project config (version controlled)
+    START_HERE.md        # bootloader — agent entry point
+    HANDOFF.md           # session relay — agent-to-agent post-it note
+    concepts/            # concept files (cross-cutting knowledge)
+    guardrails/          # guardrail threads (recorded mistakes + fixes)
+    src/                 # design file mirror tree (1:1 within scope_root)
+      auth/
+        .aindex
+        login.py.md      # YAML frontmatter + markdown body + metadata footer
 ```
 
-The `.lexibrary/` directory co-locates config with artifacts — everything Lexibrarian owns lives in one place. If the query index (§7a Option B) is adopted, `index.db` is added here and gitignored.
+The `.lexibrary/` directory co-locates config with artifacts — everything Lexibrarian owns lives in one place. The `.lexignore` file lives at the project root (alongside `.gitignore`) and follows gitignore format. If the query index (§7a Option B) is adopted, `index.db` is added to `.lexibrary/` and gitignored.
+
+### Ignore system
+
+Three layers of ignore patterns are merged:
+
+| Layer | File | Purpose |
+|-------|------|---------|
+| `.gitignore` | Standard git ignores | Build output, dependencies, etc. |
+| `.lexignore` | Lexibrarian-specific ignores | Files in git that shouldn't get design files (generated code, vendored deps, data files) |
+| `config.ignore.additional_patterns` | Programmatic patterns | Patterns from `.lexibrary/config.yaml` |
+
+### Scope root
+
+`scope_root` in `.lexibrary/config.yaml` (default: `.`, project root) controls which files get design files. Files within `scope_root` get full design file treatment. Files outside `scope_root` still appear in `.aindex` directory listings (agents can see they exist) but don't get design files. This allows projects to focus documentation on their core code (e.g., `scope_root: "src/"`) without generating design files for scripts, configs, or other peripheral files.
 
 ---
 
@@ -579,10 +643,28 @@ Decisions made during implementation that refine the architecture above. Referen
 | D-004 | 2 | `.aindex` change detection | Always regenerate in Phase 2 (no LLM cost). Revisit with directory-level composite hashing when Phase 4 introduces LLM costs. | 2026-02-19 |
 | D-005 | 2 | Crawl config in schema | `CrawlConfig` added to `LexibraryConfig` with `binary_extensions` and `max_file_size_kb`. | 2026-02-19 |
 | D-006 | 2 | Local Conventions population | Empty placeholder in Phase 2. Future phase adds agent/human population mechanism with preservation on `lexi update`. | 2026-02-19 |
+| D-011 | 4 | File scope | All files within `scope_root` get design files. Non-code files use content hash only. Files outside `scope_root` appear in `.aindex` but don't get design files. | 2026-02-20 |
+| D-012 | 4 | LLM client routing | Config-driven via BAML `ClientRegistry`. Provider selected based on `LLMConfig.provider` at runtime. | 2026-02-20 |
+| D-013 | 4 | LLM input strategy | Always send interface skeleton + full source file content. | 2026-02-20 |
+| D-014 | 4 | Dependency tracking | Forward dependencies only in Phase 4 (AST imports). Reverse dependency index deferred to Phase 5. | 2026-02-20 |
+| D-015 | 4 | Change detection source | Read `StalenessMetadata` from design file HTML comment footer — no separate cache file. | 2026-02-20 |
+| D-016 | 4 | Archivist service placement | New `archivist/` module, separate from `llm/service.py`. | 2026-02-20 |
+| D-017 | 4 | Old BAML functions | Retire `SummarizeFile`, `SummarizeFilesBatch`, `SummarizeDirectory`. | 2026-02-20 |
+| D-018 | 4 | Design file format | YAML frontmatter (agent-facing: description, updated_by) + markdown body + HTML comment footer (machine-facing: hashes, timestamps). | 2026-02-20 |
+| D-019 | 4 | Authoring model | Agent-first. Agents write/update design files during coding. `lexi update` is backup. `design_hash` in footer detects agent edits. | 2026-02-20 |
+| D-020 | 4 | `.lexignore` | New `.lexignore` file (gitignore format) layered on top of `.gitignore` + `config.ignore.additional_patterns`. | 2026-02-20 |
+| D-021 | 4 | Scope root | `scope_root` config (default: project root). Files within scope get design files; files outside appear in `.aindex` only. | 2026-02-20 |
+| D-022 | 4 | `.aindex` descriptions | File descriptions extracted from design file YAML frontmatter. Directory descriptions written once (`lexi describe` for manual updates). | 2026-02-20 |
+| D-023 | 4 | `.aindex` refresh | `lexi update` on a single file also refreshes the parent directory's `.aindex` Child Map entry. | 2026-02-20 |
+| D-024 | 4 | Content-only changes | Call LLM with focused prompt for content-only changes (interface unchanged). | 2026-02-20 |
+| D-025 | 4 | Concurrency | Sequential processing for MVP. Async architecture designed for concurrency from the start. Concurrent execution as future optimisation. | 2026-02-20 |
+| D-026 | 4 | Footer-less design files | If design file exists but has no footer, treat as `AGENT_UPDATED` — trust content, add footer. Prevents overwriting agent-authored files. | 2026-02-20 |
+| D-027 | 4 | Non-code change level | Non-code files use `CONTENT_CHANGED` state (not `INTERFACE_CHANGED`). Same LLM behavior, distinct label for clarity. | 2026-02-20 |
 
 ### Open Questions
 
 | # | Phase | Question | Status |
 |---|-------|----------|--------|
 | Q-001 | 2+ | How should `lexi update` preserve agent/human-authored Local Conventions when regenerating `.aindex`? Options: parse-and-reinject vs. treat as untouchable section. | Open |
-| Q-002 | 4 | When LLM enrichment replaces structural descriptions, should change detection use directory listing hash (cheap, misses content changes) or composite hash (listing + child content hashes, complete but more expensive)? | Open — revisit in Phase 4 planning |
+| Q-002 | 4 | When LLM enrichment replaces structural descriptions, should change detection use directory listing hash or composite hash? | Resolved — D-022/D-023: `.aindex` file descriptions are extracted from design file frontmatter (not regenerated by LLM). Directory descriptions are written once. `lexi update` refreshes individual Child Map entries, not the whole `.aindex`. |
+| Q-003 | 4 | Should `lexi update` on a single file also update the parent directory's `.aindex`? | Resolved — D-023: Yes, refresh the parent `.aindex` Child Map entry with the description from the design file's YAML frontmatter. |

@@ -4,26 +4,26 @@
 TBD - created by archiving change foundation-setup. Update Purpose after archive.
 ## Requirements
 ### Requirement: StalenessMetadata model
-The system SHALL define a `StalenessMetadata` Pydantic 2 model capturing the fields embedded in the HTML comment footer of every generated artifact: `source` (str), `source_hash` (str), `interface_hash` (str | None), `generated` (datetime), `generator` (str).
+Pydantic 2 model with fields: `source` (str), `source_hash` (str), `interface_hash` (str | None), `design_hash` (str), `generated` (datetime), `generator` (str). The `design_hash` field SHALL contain the SHA-256 hash of the design file content (frontmatter + body, excluding footer) at the time the Archivist last wrote or refreshed it.
 
-#### Scenario: StalenessMetadata validates required fields
-- **WHEN** creating a `StalenessMetadata` with source, source_hash, generated, and generator
-- **THEN** the model validates successfully with interface_hash defaulting to None
+#### Scenario: StalenessMetadata includes design_hash
+- **WHEN** a `StalenessMetadata` is created
+- **THEN** the `design_hash` field SHALL be required (non-optional str)
 
-#### Scenario: StalenessMetadata rejects missing required fields
-- **WHEN** creating a `StalenessMetadata` without the source field
-- **THEN** Pydantic raises a ValidationError
+#### Scenario: StalenessMetadata with interface_hash None
+- **WHEN** a `StalenessMetadata` is created for a non-code file
+- **THEN** `interface_hash` SHALL accept None
 
 ### Requirement: DesignFile model
-The system SHALL define a `DesignFile` Pydantic 2 model representing a design file artifact. Fields SHALL include: `source_path` (str), `summary` (str), `interface_contract` (str), `dependencies` (list[str]), `dependents` (list[str]), `tests` (str | None), `complexity_warning` (str | None), `wikilinks` (list[str]), `tags` (list[str]), `guardrail_refs` (list[str]), `metadata` (StalenessMetadata).
+Pydantic 2 model with fields: `source_path` (str), `frontmatter` (DesignFileFrontmatter), `summary` (str), `interface_contract` (str), `dependencies` (list[str]), `dependents` (list[str]), `tests` (str | None), `complexity_warning` (str | None), `wikilinks` (list[str]), `tags` (list[str]), `guardrail_refs` (list[str]), `metadata` (StalenessMetadata). The model SHALL include the `frontmatter` field containing the YAML frontmatter data.
 
-#### Scenario: DesignFile validates with minimal fields
-- **WHEN** creating a `DesignFile` with source_path, summary, interface_contract, and metadata
-- **THEN** the model validates successfully with list fields defaulting to empty lists
+#### Scenario: DesignFile with frontmatter
+- **WHEN** a `DesignFile` is created
+- **THEN** it SHALL include a `frontmatter` field of type `DesignFileFrontmatter`
 
-#### Scenario: DesignFile wikilinks are strings
-- **WHEN** creating a `DesignFile` with wikilinks=["Authentication", "MoneyHandling"]
-- **THEN** `design_file.wikilinks` returns ["Authentication", "MoneyHandling"]
+#### Scenario: DesignFile optional fields
+- **WHEN** a `DesignFile` is created with `tests=None` and `complexity_warning=None`
+- **THEN** those fields SHALL be None
 
 ### Requirement: AIndexFile model
 The system SHALL define an `AIndexFile` Pydantic 2 model representing a `.aindex` file artifact. Fields SHALL include: `directory_path` (str), `billboard` (str), `entries` (list[AIndexEntry]), `local_conventions` (list[str]), `metadata` (StalenessMetadata).
@@ -57,9 +57,18 @@ The system SHALL define a `GuardrailThread` Pydantic 2 model representing a guar
 - **THEN** Pydantic raises a ValidationError
 
 ### Requirement: Artifacts module exports
-The `src/lexibrarian/artifacts/__init__.py` SHALL re-export all public model classes so callers can write `from lexibrarian.artifacts import DesignFile, AIndexFile, ConceptFile, GuardrailThread, StalenessMetadata`.
+`src/lexibrarian/artifacts/__init__.py` SHALL re-export: DesignFile, DesignFileFrontmatter, AIndexFile, ConceptFile, GuardrailThread, StalenessMetadata.
 
-#### Scenario: All models importable from top-level artifacts
-- **WHEN** importing `from lexibrarian.artifacts import DesignFile, AIndexFile, ConceptFile, GuardrailThread, StalenessMetadata`
-- **THEN** all five names are available without ImportError
+#### Scenario: DesignFileFrontmatter importable from artifacts
+- **WHEN** `from lexibrarian.artifacts import DesignFileFrontmatter` is used
+- **THEN** the import SHALL succeed
+
+### Requirement: DesignFileFrontmatter model
+The `src/lexibrarian/artifacts/design_file.py` module SHALL export a `DesignFileFrontmatter` Pydantic 2 model with fields:
+- `description` (str) — single sentence summary
+- `updated_by` (Literal["archivist", "agent"]) — default "archivist"
+
+#### Scenario: Frontmatter model creation
+- **WHEN** a `DesignFileFrontmatter` is instantiated
+- **THEN** it SHALL validate that `updated_by` is either "archivist" or "agent"
 

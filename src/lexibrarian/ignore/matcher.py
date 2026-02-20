@@ -9,10 +9,10 @@ import pathspec
 
 class IgnoreMatcher:
     """
-    Unified ignore pattern matcher combining config and .gitignore patterns.
+    Unified ignore pattern matcher combining config, .gitignore, and .lexignore patterns.
 
     Checks config patterns first (cheap), then .gitignore specs in hierarchical
-    order (most specific directory first).
+    order (most specific directory first), then .lexignore patterns.
     """
 
     def __init__(
@@ -20,6 +20,7 @@ class IgnoreMatcher:
         root: Path,
         config_spec: pathspec.PathSpec,
         gitignore_specs: list[tuple[Path, pathspec.PathSpec]],
+        lexignore_patterns: list[str] | None = None,
     ) -> None:
         """
         Initialize matcher.
@@ -29,10 +30,14 @@ class IgnoreMatcher:
             config_spec: PathSpec from config.ignore.additional_patterns.
             gitignore_specs: List of (directory, PathSpec) tuples from .gitignore files,
                            sorted by depth (root first).
+            lexignore_patterns: Patterns from .lexignore file (gitignore format).
         """
         self.root = root.resolve()
         self.config_spec = config_spec
         self.gitignore_specs = gitignore_specs
+        self.lexignore_spec = pathspec.PathSpec.from_lines(
+            "gitignore", lexignore_patterns or []
+        )
 
     def _relative_path(self, path: Path, is_dir: bool = False) -> str:
         """
@@ -94,6 +99,10 @@ class IgnoreMatcher:
                 # Path not under this directory, skip
                 continue
 
+        # Check .lexignore patterns
+        if self.lexignore_spec.match_file(rel_path):
+            return True
+
         return False
 
     def should_descend(self, directory: Path) -> bool:
@@ -125,5 +134,9 @@ class IgnoreMatcher:
                     return False
             except ValueError:
                 continue
+
+        # Check .lexignore patterns
+        if self.lexignore_spec.match_file(rel_path):
+            return False
 
         return True

@@ -14,7 +14,7 @@ The v1 codebase built a solid foundation of reusable infrastructure. The new vis
 | Module | Reason |
 |--------|--------|
 | `utils/hashing.py` | SHA-256 hashing directly reusable; two-tier hashing extends it |
-| `ignore/` | gitignore + pathspec matching is unchanged |
+| `ignore/` | gitignore + pathspec matching is unchanged; extended in Phase 4 to load `.lexignore` |
 | `tokenizer/` | Token counting still needed for budget validation |
 | `llm/rate_limiter.py` | Token-bucket logic is provider-agnostic |
 | `daemon/watcher.py`, `debouncer.py`, `scheduler.py` | Watchdog infrastructure is correct; rewire triggers only |
@@ -23,7 +23,7 @@ The v1 codebase built a solid foundation of reusable infrastructure. The new vis
 
 | Module | What Changes |
 |--------|--------------|
-| `cli.py` | Entirely new command surface (`lookup`, `index`, `concepts`, `guardrails`, `update`, `validate`, `setup`) |
+| `cli.py` | Entirely new command surface (`lookup`, `index`, `concepts`, `guardrails`, `update`, `validate`, `setup`, `describe`) |
 | `config/schema.py` | Two-tier YAML config (`~/.config/` global + `.lexibrary/config.yaml` project) |
 | `config/loader.py` | Walk up to find `.lexibrary/` instead of `lexibrary.toml` |
 | `crawler/engine.py` | Now orchestrates design files + .aindex, not just .aindex |
@@ -49,26 +49,36 @@ The v1 codebase built a solid foundation of reusable infrastructure. The new vis
 ## New `.lexibrary/` Output Structure
 
 ```
-.lexibrary/
-  config.yaml          # project config (version controlled)
-  START_HERE.md        # bootloader — agent entry point (< 2KB)
-  HANDOFF.md           # session relay — agent-to-agent post-it (< 100 tokens)
-  concepts/            # concept files (cross-cutting knowledge)
-    Authentication.md
-    MoneyHandling.md
-  guardrails/          # guardrail threads (recorded mistakes + fixes)
-    GR-001-timezone-naive-datetimes.md
-  src/                 # design file mirror tree (1:1 by default)
-    auth/
-      .aindex
-      login.py.md
-    api/
-      .aindex
-      user_controller.py.md
+project-root/
+  .lexignore             # Lexibrarian-specific ignore patterns (gitignore format)
+  .lexibrary/
+    config.yaml          # project config (version controlled)
+    START_HERE.md        # bootloader — agent entry point (< 2KB)
+    HANDOFF.md           # session relay — agent-to-agent post-it (< 100 tokens)
+    concepts/            # concept files (cross-cutting knowledge)
+      Authentication.md
+      MoneyHandling.md
+    guardrails/          # guardrail threads (recorded mistakes + fixes)
+      GR-001-timezone-naive-datetimes.md
+    src/                 # design file mirror tree (1:1 within scope_root)
+      auth/
+        .aindex
+        login.py.md      # design file with YAML frontmatter + markdown body + metadata footer
+      api/
+        .aindex
+        user_controller.py.md
 ```
 
 Config lives at `.lexibrary/config.yaml` (project) and `~/.config/lexibrarian/config.yaml` (global).
 Project root is found by walking upward from CWD to locate `.lexibrary/`.
+
+### Ignore System
+
+Three-layer ignore: `.gitignore` + `.lexignore` + `config.ignore.additional_patterns`. A `.lexignore` file at the project root follows gitignore format and specifies files that exist in git but shouldn't get design files (generated code, vendored deps, data files).
+
+### Scope Root
+
+`scope_root` in config (default: `.`, project root) controls which files get design files. Files outside `scope_root` appear in `.aindex` directory listings but don't get design files.
 
 ---
 
@@ -173,32 +183,61 @@ Interface hash prevents expensive LLM regeneration when only internal implementa
 
 ## Phase 4 — Archivist: LLM-Powered Design Files
 
-**Goal:** `lexi update [<path>]` generates or refreshes design files. `lexi lookup <file>` returns the design file for a source file. START_HERE.md generation.
+**Goal:** `lexi update [<path>]` generates or refreshes design files as a **fallback** when agents haven't updated them directly. `lexi lookup <file>` returns the design file. START_HERE.md generation. `lexi describe` for directory descriptions.
 
 This is the core value proposition of Lexibrarian.
+
+### Agent-First Authoring Model
+
+Agents writing code are the best authors of design files (they have full context). The Archivist LLM is the safety net for files agents missed. `lexi update` detects whether an agent already updated a design file and skips LLM regeneration if so.
+
+### Design File Format
+
+Design files have three sections:
+- **YAML frontmatter** (agent-editable): `description` (single sentence, propagates to `.aindex`), `updated_by` (archivist or agent)
+- **Markdown body** (agent-editable): Interface Contract, Dependencies, Dependents, Tests, Complexity Warning, Wikilinks, Tags, Guardrails
+- **HTML comment footer** (machine-managed): source_hash, interface_hash, design_hash, generated, generator
+
+The `design_hash` field (hash of frontmatter + body, excluding footer) enables detecting agent edits without comparing full file content.
 
 ### Pipeline
 
 ```
 Source file
   ↓  Phase 3: AST parser
-Interface skeleton
-  ↓  Content hash + interface hash check
+Interface skeleton + content hash + interface hash
+  ↓  Compare against existing design file footer
 Changed?
-  ├─ No → serve existing design file
-  ├─ Interface unchanged → lightweight description update
-  └─ Interface changed → full Archivist generation
+  ├─ No → skip (up to date)
+  ├─ Agent already updated design file → refresh footer hashes only (no LLM)
+  ├─ Non-code file (no interface) → full Archivist LLM generation (CONTENT_CHANGED)
+  ├─ Interface unchanged → lightweight LLM description update (CONTENT_ONLY)
+  └─ Interface changed → full Archivist LLM generation (INTERFACE_CHANGED)
         ↓  BAML Archivist prompt
         ↓  LLM fills: summary, intent, constraints, edge cases, wikilinks, tags
-        ↓  Staleness metadata footer injected
+        ↓  YAML frontmatter + markdown body + metadata footer
 Design file written to .lexibrary/<path>.md
+  ↓  Refresh parent .aindex Child Map entry with frontmatter description
 ```
+
+### `.aindex` Integration
+
+- File descriptions in `.aindex` Child Map are pulled from design file YAML frontmatter `description` field (with structural fallback when no design file exists)
+- Directory descriptions (`.aindex` billboard) are written once and not auto-updated; `lexi describe <dir> "..."` command available for manual updates
+- `lexi update` on a single file also refreshes the parent directory's `.aindex` entry
+
+### `.lexignore` and Scope Root
+
+- New `.lexignore` file (gitignore format) layered on top of `.gitignore` + config patterns
+- `scope_root` config (default: project root) limits which files get design files; files outside scope still appear in `.aindex`
 
 ### BAML Changes
 
 Retire `SummarizeFile`, `SummarizeFilesBatch`, `SummarizeDirectory`. Add:
-- `ArchivistGenerateDesignFile(skeleton, source_diff, existing_design_file?) → DesignFile`
-- `ArchivistGenerateStartHere(project_structure, concept_list, nav_tasks) → StartHere`
+- `ArchivistGenerateDesignFile(source_path, source_content, skeleton?, language?, existing?) → DesignFileOutput`
+- `ArchivistGenerateStartHere(project_name, directory_tree, aindex_summaries, existing?) → StartHereOutput`
+
+Config-driven LLM client routing via BAML `ClientRegistry` (spike needed to verify API).
 
 ### Staleness Metadata
 
@@ -209,6 +248,7 @@ Every generated artifact gets a footer:
 source: src/services/auth_service.py
 source_hash: a3f2b8c1
 interface_hash: 7e2d4f90
+design_hash: c4d5e6f7
 generated: 2026-01-15T10:30:00Z
 generator: lexibrarian v0.2.0
 -->
@@ -216,14 +256,18 @@ generator: lexibrarian v0.2.0
 
 ### What to Watch Out For
 
+- **Agent-first model requires Phase 8 (agent environment rules) to be effective.** Before Phase 8, `lexi update` is the primary path. Phase 8 rules must be explicit about the workflow order: agents update design files *first* (directly), then `lexi update` runs as a safety net. If rules say "run `lexi update` after making changes" without emphasising direct design file editing, agents will reach for `lexi update` as the primary path — defeating the agent-first model and incurring unnecessary LLM costs.
 - Design file generation is async and LLM-expensive; rate limiter from v1 applies
 - Token budget validation runs after generation: flag if design file exceeds config target
 - `lexi lookup` must handle the case where no design file exists yet (offer to generate)
-- START_HERE.md is a special case: generated from project topology, not a single file. It needs a different pipeline (full project scan → synthesis)
+- START_HERE.md is a special case: generated from project topology, not a single file
+- `.aindex` refresh on single file update requires read-modify-write of parent `.aindex`
+- Footer-less design files (agent-authored from scratch before Archivist runs) must be treated as `AGENT_UPDATED`, not `NEW_FILE` — otherwise agent work gets overwritten by LLM regeneration (D-026)
+- First-run `lexi update` on a large project is slow (sequential LLM calls, 10–30 min for 300+ files). Set expectations via progress bar and documentation. Design async architecture for future concurrency from the start (D-025)
 
 ---
 
-## Phase 5 — Knowledge Graph & Concepts
+## Phase 5 — Concepts Wiki
 
 **Goal:** `lexi concepts [<topic>]` lists or searches concept files. Wikilinks in design files resolve to concept files. `[[ConceptName]]` in any artifact can be followed.
 

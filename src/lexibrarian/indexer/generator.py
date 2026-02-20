@@ -8,14 +8,16 @@ from pathlib import Path
 from lexibrarian.artifacts.aindex import AIndexEntry, AIndexFile
 from lexibrarian.artifacts.aindex_parser import parse_aindex
 from lexibrarian.artifacts.design_file import StalenessMetadata
+from lexibrarian.artifacts.design_file_parser import parse_design_file_frontmatter
 from lexibrarian.ignore.matcher import IgnoreMatcher
 from lexibrarian.utils.hashing import hash_string
 from lexibrarian.utils.languages import EXTENSION_MAP
+from lexibrarian.utils.paths import mirror_path
 
 _GENERATOR_ID = "lexibrarian-v2"
 
 
-def _get_file_description(file_path: Path, binary_extensions: set[str]) -> str:
+def _get_structural_description(file_path: Path, binary_extensions: set[str]) -> str:
     """Return a structural description string for a file entry."""
     ext = file_path.suffix.lower()
     if ext in binary_extensions:
@@ -32,14 +34,33 @@ def _get_file_description(file_path: Path, binary_extensions: set[str]) -> str:
     return f"{language} source ({line_count} lines)"
 
 
+def _get_file_description(
+    file_path: Path,
+    binary_extensions: set[str],
+    project_root: Path,
+) -> str:
+    """Return a description for a file entry.
+
+    Checks the design file frontmatter in the .lexibrary mirror tree first.
+    If a non-empty description is found there, it is used. Otherwise falls
+    back to a structural description (language + line count).
+    """
+    design_path = mirror_path(project_root, file_path)
+    frontmatter = parse_design_file_frontmatter(design_path)
+    if frontmatter is not None and frontmatter.description.strip():
+        return frontmatter.description.strip()
+
+    return _get_structural_description(file_path, binary_extensions)
+
+
 def _get_dir_description(subdir: Path, project_root: Path) -> str:
     """Return a description for a subdirectory entry.
 
     Uses entry counts from its child .aindex in the .lexibrary mirror tree
     if available; otherwise falls back to a direct filesystem count.
     """
-    mirror_path = project_root / ".lexibrary" / subdir.relative_to(project_root) / ".aindex"
-    child_aindex = parse_aindex(mirror_path)
+    mirror_aindex = project_root / ".lexibrary" / subdir.relative_to(project_root) / ".aindex"
+    child_aindex = parse_aindex(mirror_aindex)
     if child_aindex is not None:
         file_count = sum(1 for e in child_aindex.entries if e.entry_type == "file")
         dir_count = sum(1 for e in child_aindex.entries if e.entry_type == "dir")
@@ -107,7 +128,7 @@ def generate_aindex(
             continue
         all_names.append(child.name)
         if child.is_file():
-            description = _get_file_description(child, binary_extensions)
+            description = _get_file_description(child, binary_extensions, project_root)
             entries.append(
                 AIndexEntry(
                     name=child.name,

@@ -36,4 +36,10 @@ def create_ignore_matcher(config: LexibraryConfig, root: Path) -> IgnoreMatcher:
     if config.ignore.use_gitignore:
         gitignore_specs = load_gitignore_specs(root)
 
-    return IgnoreMatcher(root, config_spec, gitignore_specs)
+    # Load .lexignore patterns (optional — missing file is OK)
+    lexignore_patterns: list[str] = []
+    lexignore_path = root / ".lexignore"
+    if lexignore_path.exists():
+        lexignore_patterns = lexignore_path.read_text().splitlines()
+
+    return IgnoreMatcher(root, config_spec, gitignore_specs, lexignore_patterns)

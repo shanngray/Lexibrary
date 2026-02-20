@@ -1,0 +1,826 @@
+"""Tests for archivist pipeline."""
+
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from lexibrarian.archivist.change_checker import ChangeLevel
+from lexibrarian.archivist.pipeline import (
+    UpdateStats,
+    FileResult,
+    _is_binary,
+    _is_within_scope,
+    _refresh_parent_aindex,
+    update_file,
+    update_project,
+)
+from lexibrarian.archivist.service import (
+    ArchivistService,
+    DesignFileResult,
+)
+from lexibrarian.artifacts.aindex import AIndexEntry, AIndexFile
+from lexibrarian.artifacts.aindex_serializer import serialize_aindex
+from lexibrarian.artifacts.design_file import StalenessMetadata
+from lexibrarian.baml_client.types import DesignFileOutput
+from lexibrarian.config.schema import LexibraryConfig, TokenBudgetConfig
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _make_source_file(tmp_path: Path, rel: str, content: str = "print('hello')") -> Path:
+    """Create a source file at the given relative path."""
+    source = tmp_path / rel
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text(content, encoding="utf-8")
+    return source
+
+
+def _make_design_file(
+    tmp_path: Path,
+    source_rel: str,
+    *,
+    source_hash: str = "src_hash_aaa",
+    interface_hash: str | None = None,
+    design_hash: str | None = None,
+    body: str | None = None,
+    include_footer: bool = True,
+    description: str = "Test file.",
+) -> Path:
+    """Create a design file at the mirror path within tmp_path."""
+    design_dir = tmp_path / ".lexibrary" / Path(source_rel).parent
+    design_dir.mkdir(parents=True, exist_ok=True)
+    design_path = tmp_path / ".lexibrary" / f"{source_rel}.md"
+
+    if body is None:
+        body = (
+            "---\n"
+            f"description: {description}\n"
+            "updated_by: archivist\n"
+            "---\n"
+            "\n"
+            f"# {source_rel}\n"
+            "\n"
+            "## Interface Contract\n"
+            "\n"
+            "```python\ndef foo(): ...\n```\n"
+            "\n"
+            "## Dependencies\n"
+            "\n"
+            "(none)\n"
+            "\n"
+            "## Dependents\n"
+            "\n"
+            "(none)\n"
+        )
+
+    if include_footer:
+        if design_hash is None:
+            design_hash = _sha256(body.rstrip("\n"))
+
+        footer_lines = [
+            "<!-- lexibrarian:meta",
+            f"source: {source_rel}",
+            f"source_hash: {source_hash}",
+        ]
+        if interface_hash is not None:
+            footer_lines.append(f"interface_hash: {interface_hash}")
+        footer_lines.append(f"design_hash: {design_hash}")
+        footer_lines.append("generated: 2026-01-01T12:00:00")
+        footer_lines.append("generator: lexibrarian-v2")
+        footer_lines.append("-->")
+
+        text = body + "\n" + "\n".join(footer_lines) + "\n"
+    else:
+        text = body
+
+    design_path.write_text(text, encoding="utf-8")
+    return design_path
+
+
+def _make_aindex(tmp_path: Path, dir_rel: str, entries: list[AIndexEntry]) -> Path:
+    """Create a .aindex file for a directory."""
+    from datetime import datetime
+
+    aindex_dir = tmp_path / ".lexibrary" / dir_rel
+    aindex_dir.mkdir(parents=True, exist_ok=True)
+    aindex_file_path = aindex_dir / ".aindex"
+
+    aindex = AIndexFile(
+        directory_path=dir_rel,
+        billboard="Test directory.",
+        entries=entries,
+        local_conventions=[],
+        metadata=StalenessMetadata(
+            source=dir_rel,
+            source_hash="dir_hash",
+            generated=datetime(2026, 1, 1),
+            generator="lexibrarian-v2",
+        ),
+    )
+    serialized = serialize_aindex(aindex)
+    aindex_file_path.write_text(serialized, encoding="utf-8")
+    return aindex_file_path
+
+
+def _make_config(scope_root: str = ".", design_file_tokens: int = 400) -> LexibraryConfig:
+    """Create a config with given scope_root and token budget."""
+    return LexibraryConfig(
+        scope_root=scope_root,
+        token_budgets=TokenBudgetConfig(design_file_tokens=design_file_tokens),
+    )
+
+
+def _mock_archivist(
+    summary: str = "Handles testing.",
+    interface_contract: str = "def foo(): ...",
+    error: bool = False,
+) -> ArchivistService:
+    """Create a mock ArchivistService that returns a canned design file output."""
+    output = DesignFileOutput(
+        summary=summary,
+        interface_contract=interface_contract,
+        dependencies=[],
+        tests=None,
+        complexity_warning=None,
+        wikilinks=[],
+        tags=[],
+    )
+
+    result = DesignFileResult(
+        source_path="mock",
+        design_file_output=None if error else output,
+        error=error,
+        error_message="LLM error" if error else None,
+    )
+
+    service = MagicMock(spec=ArchivistService)
+    service.generate_design_file = AsyncMock(return_value=result)
+    return service
+
+
+# ---------------------------------------------------------------------------
+# UpdateStats
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateStats:
+    """Verify UpdateStats dataclass defaults and accumulation."""
+
+    def test_defaults_are_zero(self) -> None:
+        stats = UpdateStats()
+        assert stats.files_scanned == 0
+        assert stats.files_unchanged == 0
+        assert stats.files_agent_updated == 0
+        assert stats.files_updated == 0
+        assert stats.files_created == 0
+        assert stats.files_failed == 0
+        assert stats.aindex_refreshed == 0
+        assert stats.token_budget_warnings == 0
+
+    def test_fields_are_mutable(self) -> None:
+        stats = UpdateStats()
+        stats.files_scanned = 5
+        stats.files_created = 3
+        stats.token_budget_warnings = 1
+        assert stats.files_scanned == 5
+        assert stats.files_created == 3
+        assert stats.token_budget_warnings == 1
+
+
+# ---------------------------------------------------------------------------
+# _is_within_scope
+# ---------------------------------------------------------------------------
+
+
+class TestIsWithinScope:
+    def test_inside_scope(self, tmp_path: Path) -> None:
+        source = tmp_path / "src" / "foo.py"
+        assert _is_within_scope(source, tmp_path, "src") is True
+
+    def test_outside_scope(self, tmp_path: Path) -> None:
+        source = tmp_path / "docs" / "readme.md"
+        assert _is_within_scope(source, tmp_path, "src") is False
+
+    def test_dot_scope_includes_everything(self, tmp_path: Path) -> None:
+        source = tmp_path / "any" / "file.py"
+        assert _is_within_scope(source, tmp_path, ".") is True
+
+
+# ---------------------------------------------------------------------------
+# _is_binary
+# ---------------------------------------------------------------------------
+
+
+class TestIsBinary:
+    def test_binary_extension(self) -> None:
+        assert _is_binary(Path("image.png"), {".png", ".jpg"}) is True
+
+    def test_non_binary_extension(self) -> None:
+        assert _is_binary(Path("code.py"), {".png", ".jpg"}) is False
+
+
+# ---------------------------------------------------------------------------
+# update_file — NEW_FILE scenario
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileNewFile:
+    """New file with no existing design file gets LLM-generated design file."""
+
+    @pytest.mark.asyncio()
+    async def test_new_file_creates_design_file(self, tmp_path: Path) -> None:
+        source = _make_source_file(tmp_path, "src/foo.py", "def bar(): pass")
+        config = _make_config()
+        archivist = _mock_archivist(summary="Foo module for testing.")
+
+        result = await update_file(source, tmp_path, config, archivist)
+
+        assert result.change == ChangeLevel.NEW_FILE
+        assert not result.failed
+
+        design_path = tmp_path / ".lexibrary" / "src" / "foo.py.md"
+        assert design_path.exists()
+        content = design_path.read_text()
+        assert "Foo module for testing." in content
+
+        # LLM was called
+        archivist.generate_design_file.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# update_file — UNCHANGED scenario
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileUnchanged:
+    """File with matching content hash returns UNCHANGED without LLM call."""
+
+    @pytest.mark.asyncio()
+    async def test_unchanged_file_no_llm(self, tmp_path: Path) -> None:
+        source_rel = "src/foo.py"
+        source = _make_source_file(tmp_path, source_rel, "def bar(): pass")
+
+        # Compute actual content hash (SHA-256 of raw bytes)
+        import hashlib as _hl
+        actual_hash = _hl.sha256(source.read_bytes()).hexdigest()
+
+        _make_design_file(
+            tmp_path, source_rel, source_hash=actual_hash,
+        )
+
+        config = _make_config()
+        archivist = _mock_archivist()
+
+        result = await update_file(source, tmp_path, config, archivist)
+
+        assert result.change == ChangeLevel.UNCHANGED
+        archivist.generate_design_file.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# update_file — AGENT_UPDATED scenario
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileAgentUpdated:
+    """Agent-edited design file gets footer refresh only, no LLM call."""
+
+    @pytest.mark.asyncio()
+    async def test_agent_updated_refreshes_footer(self, tmp_path: Path) -> None:
+        source_rel = "src/foo.py"
+        source = _make_source_file(tmp_path, source_rel, "def bar(): pass")
+
+        # Create design file with a mismatched design_hash (simulating agent edit)
+        _make_design_file(
+            tmp_path, source_rel,
+            source_hash="old_hash",
+            design_hash="agent_changed_this",
+        )
+
+        config = _make_config()
+        archivist = _mock_archivist()
+
+        result = await update_file(source, tmp_path, config, archivist)
+
+        assert result.change == ChangeLevel.AGENT_UPDATED
+        archivist.generate_design_file.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# update_file — FOOTERLESS scenario
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileFooterless:
+    """Design file without footer is treated as AGENT_UPDATED (adds footer)."""
+
+    @pytest.mark.asyncio()
+    async def test_footerless_treated_as_agent_updated(self, tmp_path: Path) -> None:
+        source_rel = "src/foo.py"
+        source = _make_source_file(tmp_path, source_rel, "def bar(): pass")
+
+        _make_design_file(tmp_path, source_rel, include_footer=False)
+
+        config = _make_config()
+        archivist = _mock_archivist()
+
+        result = await update_file(source, tmp_path, config, archivist)
+
+        assert result.change == ChangeLevel.AGENT_UPDATED
+        archivist.generate_design_file.assert_not_awaited()
+
+        # Verify footer was added
+        design_path = tmp_path / ".lexibrary" / f"{source_rel}.md"
+        content = design_path.read_text()
+        assert "lexibrarian:meta" in content
+
+
+# ---------------------------------------------------------------------------
+# update_file — CONTENT_ONLY scenario
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileContentOnly:
+    """Content changed but interface unchanged triggers LLM call."""
+
+    @pytest.mark.asyncio()
+    async def test_content_only_calls_llm(self, tmp_path: Path) -> None:
+        source_rel = "src/foo.py"
+        source = _make_source_file(tmp_path, source_rel, "def bar(): pass\n# comment")
+
+        # Create design file with old source hash but matching interface hash
+        # We need to make the design_hash match the actual content hash of the design file
+        body = (
+            "---\n"
+            "description: Test file.\n"
+            "updated_by: archivist\n"
+            "---\n"
+            "\n"
+            f"# {source_rel}\n"
+            "\n"
+            "## Interface Contract\n"
+            "\n"
+            "```python\ndef foo(): ...\n```\n"
+            "\n"
+            "## Dependencies\n"
+            "\n"
+            "(none)\n"
+            "\n"
+            "## Dependents\n"
+            "\n"
+            "(none)\n"
+        )
+
+        # We need interface_hash to match what compute_hashes will return
+        # For this test, we mock compute_hashes
+        with patch("lexibrarian.archivist.pipeline.compute_hashes") as mock_hashes:
+            mock_hashes.return_value = ("new_content_hash", "same_iface")
+
+            _make_design_file(
+                tmp_path, source_rel,
+                source_hash="old_content_hash",
+                interface_hash="same_iface",
+                body=body,
+            )
+
+            with patch(
+                "lexibrarian.archivist.pipeline.check_change",
+                return_value=ChangeLevel.CONTENT_ONLY,
+            ):
+                config = _make_config()
+                archivist = _mock_archivist()
+
+                result = await update_file(source, tmp_path, config, archivist)
+
+        assert result.change == ChangeLevel.CONTENT_ONLY
+        archivist.generate_design_file.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# update_file — CONTENT_CHANGED scenario (non-code)
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileContentChanged:
+    """Non-code file content change triggers LLM call."""
+
+    @pytest.mark.asyncio()
+    async def test_content_changed_non_code(self, tmp_path: Path) -> None:
+        source_rel = "docs/readme.md"
+        source = _make_source_file(tmp_path, source_rel, "# Updated readme")
+
+        with patch("lexibrarian.archivist.pipeline.compute_hashes") as mock_hashes:
+            mock_hashes.return_value = ("new_hash", None)
+
+            with patch(
+                "lexibrarian.archivist.pipeline.check_change",
+                return_value=ChangeLevel.CONTENT_CHANGED,
+            ):
+                config = _make_config()
+                archivist = _mock_archivist()
+
+                result = await update_file(source, tmp_path, config, archivist)
+
+        assert result.change == ChangeLevel.CONTENT_CHANGED
+        archivist.generate_design_file.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# update_file — INTERFACE_CHANGED scenario
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileInterfaceChanged:
+    """Interface change triggers full LLM regeneration."""
+
+    @pytest.mark.asyncio()
+    async def test_interface_changed_calls_llm(self, tmp_path: Path) -> None:
+        source_rel = "src/foo.py"
+        source = _make_source_file(tmp_path, source_rel, "def new_func(): pass")
+
+        with patch("lexibrarian.archivist.pipeline.compute_hashes") as mock_hashes:
+            mock_hashes.return_value = ("new_hash", "new_iface")
+
+            with patch(
+                "lexibrarian.archivist.pipeline.check_change",
+                return_value=ChangeLevel.INTERFACE_CHANGED,
+            ):
+                config = _make_config()
+                archivist = _mock_archivist()
+
+                result = await update_file(source, tmp_path, config, archivist)
+
+        assert result.change == ChangeLevel.INTERFACE_CHANGED
+        archivist.generate_design_file.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# update_file — outside scope
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileOutsideScope:
+    """File outside scope_root is skipped."""
+
+    @pytest.mark.asyncio()
+    async def test_outside_scope_skipped(self, tmp_path: Path) -> None:
+        source = _make_source_file(tmp_path, "docs/readme.md")
+        config = _make_config(scope_root="src")
+        archivist = _mock_archivist()
+
+        result = await update_file(source, tmp_path, config, archivist)
+
+        assert result.change == ChangeLevel.UNCHANGED
+        archivist.generate_design_file.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# update_file — .aindex refresh
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileAIndexRefresh:
+    """Parent .aindex is refreshed when design file is created/updated."""
+
+    @pytest.mark.asyncio()
+    async def test_aindex_refreshed_on_new_file(self, tmp_path: Path) -> None:
+        source_rel = "src/foo.py"
+        source = _make_source_file(tmp_path, source_rel, "def bar(): pass")
+
+        # Create parent .aindex with existing entries
+        _make_aindex(tmp_path, "src", [
+            AIndexEntry(name="existing.py", entry_type="file", description="Existing file"),
+        ])
+
+        config = _make_config()
+        archivist = _mock_archivist(summary="Foo module.")
+
+        with patch("lexibrarian.archivist.pipeline.compute_hashes") as mock_hashes:
+            mock_hashes.return_value = ("hash1", "iface1")
+            with patch(
+                "lexibrarian.archivist.pipeline.check_change",
+                return_value=ChangeLevel.NEW_FILE,
+            ):
+                result = await update_file(source, tmp_path, config, archivist)
+
+        assert result.aindex_refreshed is True
+
+        # Check the .aindex was updated
+        from lexibrarian.artifacts.aindex_parser import parse_aindex
+
+        aindex = parse_aindex(tmp_path / ".lexibrary" / "src" / ".aindex")
+        assert aindex is not None
+        names = [e.name for e in aindex.entries]
+        assert "foo.py" in names
+
+        # Find the entry and check description
+        for entry in aindex.entries:
+            if entry.name == "foo.py":
+                assert entry.description == "Foo module."
+                break
+
+
+# ---------------------------------------------------------------------------
+# update_file — token budget warning
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileTokenBudget:
+    """Oversized design file logs warning but is still written."""
+
+    @pytest.mark.asyncio()
+    async def test_token_budget_warning(self, tmp_path: Path) -> None:
+        source_rel = "src/foo.py"
+        source = _make_source_file(tmp_path, source_rel, "def bar(): pass")
+
+        # Use a very low token budget
+        config = _make_config(design_file_tokens=1)
+
+        archivist = _mock_archivist(
+            summary="A very detailed summary with lots of words.",
+            interface_contract="def bar(): pass\ndef baz(): pass",
+        )
+
+        with patch("lexibrarian.archivist.pipeline.compute_hashes") as mock_hashes:
+            mock_hashes.return_value = ("hash1", "iface1")
+            with patch(
+                "lexibrarian.archivist.pipeline.check_change",
+                return_value=ChangeLevel.NEW_FILE,
+            ):
+                result = await update_file(source, tmp_path, config, archivist)
+
+        assert result.token_budget_exceeded is True
+
+        # File was still written
+        design_path = tmp_path / ".lexibrary" / f"{source_rel}.md"
+        assert design_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# update_file — LLM error
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileLLMError:
+    """LLM error marks the result as failed."""
+
+    @pytest.mark.asyncio()
+    async def test_llm_error_returns_failed(self, tmp_path: Path) -> None:
+        source_rel = "src/foo.py"
+        source = _make_source_file(tmp_path, source_rel, "def bar(): pass")
+
+        config = _make_config()
+        archivist = _mock_archivist(error=True)
+
+        with patch("lexibrarian.archivist.pipeline.compute_hashes") as mock_hashes:
+            mock_hashes.return_value = ("hash1", "iface1")
+            with patch(
+                "lexibrarian.archivist.pipeline.check_change",
+                return_value=ChangeLevel.NEW_FILE,
+            ):
+                result = await update_file(source, tmp_path, config, archivist)
+
+        assert result.failed is True
+
+
+# ---------------------------------------------------------------------------
+# update_project — file discovery
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateProjectDiscovery:
+    """Project update discovers files within scope, skipping binary and .lexibrary."""
+
+    @pytest.mark.asyncio()
+    async def test_discovers_source_files(self, tmp_path: Path) -> None:
+        _make_source_file(tmp_path, "src/foo.py", "def foo(): pass")
+        _make_source_file(tmp_path, "src/bar.py", "def bar(): pass")
+
+        config = _make_config(scope_root="src")
+        archivist = _mock_archivist()
+
+        # Patch update_file to track calls without real processing
+        calls: list[Path] = []
+
+        async def fake_update_file(
+            source_path: Path, project_root: Path, cfg: LexibraryConfig, svc: ArchivistService,
+        ) -> FileResult:
+            calls.append(source_path)
+            return FileResult(change=ChangeLevel.UNCHANGED)
+
+        with patch("lexibrarian.archivist.pipeline.update_file", side_effect=fake_update_file):
+            stats = await update_project(tmp_path, config, archivist)
+
+        assert stats.files_scanned == 2
+        assert stats.files_unchanged == 2
+        file_names = {p.name for p in calls}
+        assert "foo.py" in file_names
+        assert "bar.py" in file_names
+
+    @pytest.mark.asyncio()
+    async def test_skips_binary_files(self, tmp_path: Path) -> None:
+        _make_source_file(tmp_path, "src/foo.py", "def foo(): pass")
+        # Create a binary file
+        img = tmp_path / "src" / "logo.png"
+        img.write_bytes(b"\x89PNG")
+
+        config = _make_config(scope_root="src")
+        archivist = _mock_archivist()
+
+        calls: list[Path] = []
+
+        async def fake_update_file(
+            source_path: Path, project_root: Path, cfg: LexibraryConfig, svc: ArchivistService,
+        ) -> FileResult:
+            calls.append(source_path)
+            return FileResult(change=ChangeLevel.UNCHANGED)
+
+        with patch("lexibrarian.archivist.pipeline.update_file", side_effect=fake_update_file):
+            await update_project(tmp_path, config, archivist)
+
+        file_names = {p.name for p in calls}
+        assert "logo.png" not in file_names
+
+    @pytest.mark.asyncio()
+    async def test_skips_lexibrary_contents(self, tmp_path: Path) -> None:
+        _make_source_file(tmp_path, "src/foo.py", "def foo(): pass")
+        # Create a file inside .lexibrary
+        lexi_file = tmp_path / ".lexibrary" / "src" / "foo.py.md"
+        lexi_file.parent.mkdir(parents=True, exist_ok=True)
+        lexi_file.write_text("design file", encoding="utf-8")
+
+        config = _make_config()
+        archivist = _mock_archivist()
+
+        calls: list[Path] = []
+
+        async def fake_update_file(
+            source_path: Path, project_root: Path, cfg: LexibraryConfig, svc: ArchivistService,
+        ) -> FileResult:
+            calls.append(source_path)
+            return FileResult(change=ChangeLevel.UNCHANGED)
+
+        with patch("lexibrarian.archivist.pipeline.update_file", side_effect=fake_update_file):
+            await update_project(tmp_path, config, archivist)
+
+        file_names = {p.name for p in calls}
+        assert "foo.py.md" not in file_names
+
+
+# ---------------------------------------------------------------------------
+# update_project — stats accumulation
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateProjectStats:
+    """Stats correctly reflect different change levels."""
+
+    @pytest.mark.asyncio()
+    async def test_stats_accumulate_correctly(self, tmp_path: Path) -> None:
+        _make_source_file(tmp_path, "src/a.py", "# a")
+        _make_source_file(tmp_path, "src/b.py", "# b")
+        _make_source_file(tmp_path, "src/c.py", "# c")
+        _make_source_file(tmp_path, "src/d.py", "# d")
+
+        config = _make_config(scope_root="src")
+        archivist = _mock_archivist()
+
+        call_count = 0
+        results = [
+            FileResult(change=ChangeLevel.UNCHANGED),
+            FileResult(change=ChangeLevel.NEW_FILE, aindex_refreshed=True),
+            FileResult(change=ChangeLevel.AGENT_UPDATED),
+            FileResult(
+                change=ChangeLevel.CONTENT_ONLY,
+                token_budget_exceeded=True,
+                aindex_refreshed=True,
+            ),
+        ]
+
+        async def fake_update_file(
+            source_path: Path, project_root: Path, cfg: LexibraryConfig, svc: ArchivistService,
+        ) -> FileResult:
+            nonlocal call_count
+            r = results[call_count]
+            call_count += 1
+            return r
+
+        with patch("lexibrarian.archivist.pipeline.update_file", side_effect=fake_update_file):
+            stats = await update_project(tmp_path, config, archivist)
+
+        assert stats.files_scanned == 4
+        assert stats.files_unchanged == 1
+        assert stats.files_created == 1
+        assert stats.files_agent_updated == 1
+        assert stats.files_updated == 1
+        assert stats.aindex_refreshed == 2
+        assert stats.token_budget_warnings == 1
+        assert stats.files_failed == 0
+
+
+# ---------------------------------------------------------------------------
+# update_project — progress callback
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateProjectProgressCallback:
+    """Progress callback is invoked for each processed file."""
+
+    @pytest.mark.asyncio()
+    async def test_progress_callback_called(self, tmp_path: Path) -> None:
+        _make_source_file(tmp_path, "src/foo.py", "# foo")
+
+        config = _make_config(scope_root="src")
+        archivist = _mock_archivist()
+
+        callback_calls: list[tuple[Path, ChangeLevel]] = []
+
+        def callback(path: Path, change: ChangeLevel) -> None:
+            callback_calls.append((path, change))
+
+        async def fake_update_file(
+            source_path: Path, project_root: Path, cfg: LexibraryConfig, svc: ArchivistService,
+        ) -> FileResult:
+            return FileResult(change=ChangeLevel.UNCHANGED)
+
+        with patch("lexibrarian.archivist.pipeline.update_file", side_effect=fake_update_file):
+            await update_project(tmp_path, config, archivist, progress_callback=callback)
+
+        assert len(callback_calls) == 1
+        assert callback_calls[0][1] == ChangeLevel.UNCHANGED
+
+
+# ---------------------------------------------------------------------------
+# _refresh_parent_aindex
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshParentAindex:
+    """Verify .aindex child map updates."""
+
+    def test_updates_existing_entry(self, tmp_path: Path) -> None:
+        source = tmp_path / "src" / "foo.py"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.touch()
+
+        _make_aindex(tmp_path, "src", [
+            AIndexEntry(name="foo.py", entry_type="file", description="Old description"),
+        ])
+
+        result = _refresh_parent_aindex(source, tmp_path, "New description")
+        assert result is True
+
+        from lexibrarian.artifacts.aindex_parser import parse_aindex
+
+        aindex = parse_aindex(tmp_path / ".lexibrary" / "src" / ".aindex")
+        assert aindex is not None
+        assert aindex.entries[0].description == "New description"
+
+    def test_adds_new_entry(self, tmp_path: Path) -> None:
+        source = tmp_path / "src" / "new_file.py"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.touch()
+
+        _make_aindex(tmp_path, "src", [
+            AIndexEntry(name="existing.py", entry_type="file", description="Existing"),
+        ])
+
+        result = _refresh_parent_aindex(source, tmp_path, "Brand new file")
+        assert result is True
+
+        from lexibrarian.artifacts.aindex_parser import parse_aindex
+
+        aindex = parse_aindex(tmp_path / ".lexibrary" / "src" / ".aindex")
+        assert aindex is not None
+        names = [e.name for e in aindex.entries]
+        assert "new_file.py" in names
+
+    def test_no_aindex_returns_false(self, tmp_path: Path) -> None:
+        source = tmp_path / "src" / "foo.py"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.touch()
+
+        result = _refresh_parent_aindex(source, tmp_path, "Description")
+        assert result is False
+
+    def test_same_description_no_update(self, tmp_path: Path) -> None:
+        source = tmp_path / "src" / "foo.py"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.touch()
+
+        _make_aindex(tmp_path, "src", [
+            AIndexEntry(name="foo.py", entry_type="file", description="Same description"),
+        ])
+
+        result = _refresh_parent_aindex(source, tmp_path, "Same description")
+        assert result is False

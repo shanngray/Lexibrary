@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from lexibrarian.artifacts.aindex import AIndexEntry, AIndexFile
 from lexibrarian.artifacts.concept import ConceptFile
-from lexibrarian.artifacts.design_file import DesignFile, StalenessMetadata
+from lexibrarian.artifacts.design_file import DesignFile, DesignFileFrontmatter, StalenessMetadata
 from lexibrarian.artifacts.guardrail import GuardrailThread
 
 # ---------------------------------------------------------------------------
@@ -47,10 +47,17 @@ class TestStalenessMetadata:
 # DesignFile
 # ---------------------------------------------------------------------------
 
+def _frontmatter(**overrides: object) -> DesignFileFrontmatter:
+    base: dict = {"description": "A module."}
+    base.update(overrides)
+    return DesignFileFrontmatter(**base)
+
+
 class TestDesignFile:
     def test_minimal_valid(self) -> None:
         df = DesignFile(
             source_path="src/foo.py",
+            frontmatter=_frontmatter(),
             summary="A module",
             interface_contract="def foo()",
             metadata=StalenessMetadata(**_meta()),
@@ -61,6 +68,7 @@ class TestDesignFile:
     def test_full_fields(self) -> None:
         df = DesignFile(
             source_path="src/foo.py",
+            frontmatter=_frontmatter(),
             summary="A module",
             interface_contract="def foo()",
             dependencies=["bar.py"],
@@ -79,6 +87,7 @@ class TestDesignFile:
         with pytest.raises(ValidationError):
             DesignFile(
                 source_path="x",
+                frontmatter=_frontmatter(),
                 summary="y",
                 interface_contract="z",
             )  # type: ignore[call-arg]

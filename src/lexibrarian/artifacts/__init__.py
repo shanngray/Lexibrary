@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from lexibrarian.artifacts.aindex import AIndexEntry, AIndexFile
 from lexibrarian.artifacts.concept import ConceptFile
-from lexibrarian.artifacts.design_file import DesignFile, StalenessMetadata
+from lexibrarian.artifacts.design_file import DesignFile, DesignFileFrontmatter, StalenessMetadata
 from lexibrarian.artifacts.guardrail import GuardrailThread
 
 __all__ = [
@@ -12,6 +12,7 @@ __all__ = [
     "AIndexFile",
     "ConceptFile",
     "DesignFile",
+    "DesignFileFrontmatter",
     "GuardrailThread",
     "StalenessMetadata",
 ]

@@ -8,6 +8,13 @@ from lexibrarian.config.defaults import DEFAULT_PROJECT_CONFIG_TEMPLATE
 
 LEXIBRARY_DIR = ".lexibrary"
 
+LEXIGNORE_HEADER = """\
+# .lexignore — Lexibrarian-specific ignore patterns
+# Files matching these patterns will NOT receive design files, even if tracked by git.
+# Uses .gitignore format and rules.
+# Example: **/migrations/
+"""
+
 START_HERE_PLACEHOLDER = """\
 # START HERE
 
@@ -58,6 +65,7 @@ def create_lexibrary_skeleton(project_root: Path) -> list[Path]:
         base / "config.yaml": DEFAULT_PROJECT_CONFIG_TEMPLATE,
         base / "START_HERE.md": START_HERE_PLACEHOLDER,
         base / "HANDOFF.md": HANDOFF_PLACEHOLDER,
+        project_root / ".lexignore": LEXIGNORE_HEADER,
     }
     for path, content in files.items():
         if not path.exists():

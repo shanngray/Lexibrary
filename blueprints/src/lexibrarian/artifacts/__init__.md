@@ -4,9 +4,10 @@
 
 ## Re-exports
 
-`AIndexEntry`, `AIndexFile`, `ConceptFile`, `DesignFile`, `GuardrailThread`, `StalenessMetadata`
+`AIndexEntry`, `AIndexFile`, `ConceptFile`, `DesignFile`, `DesignFileFrontmatter`, `GuardrailThread`, `StalenessMetadata`
 
 ## Dependents
 
-- Future artifact generator and parser modules will import from here
-- CLI commands (`lookup`, `concepts`, `guardrails`) will consume these models
+- `lexibrarian.archivist.pipeline` -- imports `DesignFile`, `DesignFileFrontmatter`, `StalenessMetadata`, `AIndexEntry`
+- `lexibrarian.indexer.generator` -- imports `AIndexEntry`, `AIndexFile`, `StalenessMetadata`
+- CLI commands (`lookup`, `describe`) consume these models

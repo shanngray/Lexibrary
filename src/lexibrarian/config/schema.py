@@ -12,6 +12,7 @@ class CrawlConfig(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    max_file_size_kb: int = 512
     binary_extensions: list[str] = Field(
         default_factory=lambda: [
             # Images
@@ -123,6 +124,7 @@ class LexibraryConfig(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    scope_root: str = "."
     llm: LLMConfig = Field(default_factory=LLMConfig)
     token_budgets: TokenBudgetConfig = Field(default_factory=TokenBudgetConfig)
     mapping: MappingConfig = Field(default_factory=MappingConfig)

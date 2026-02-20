@@ -4,35 +4,23 @@
 TBD - created by archiving change phase-1-foundation. Update Purpose after archive.
 ## Requirements
 ### Requirement: Config schema with defaults
-The system SHALL define a nested Pydantic model hierarchy (LexibraryConfig, LLMConfig, TokenizerConfig, CrawlConfig, IgnoreConfig, DaemonConfig, OutputConfig, ASTConfig) with sensible defaults for all settings.
+Nested Pydantic model hierarchy (LexibraryConfig, LLMConfig, TokenizerConfig, CrawlConfig, IgnoreConfig, DaemonConfig, OutputConfig, ASTConfig) with sensible defaults. `LexibraryConfig` SHALL include a `scope_root: str` field (default: `"."`) specifying which files get design files — relative to project root. `CrawlConfig` SHALL include a `max_file_size_kb: int` field (default: `512`) — files exceeding this size are skipped during `update_project` with a log warning.
 
-#### Scenario: Default LLM config uses Anthropic
-- **WHEN** creating a default LLMConfig
-- **THEN** it has provider="anthropic", model="claude-sonnet-4-5-20250514", api_key_env="ANTHROPIC_API_KEY", max_retries=3, timeout=60
+#### Scenario: Default scope_root
+- **WHEN** config is loaded without a `scope_root` field
+- **THEN** `scope_root` SHALL default to `"."`
 
-#### Scenario: Default crawl config has reasonable limits
-- **WHEN** creating a default CrawlConfig
-- **THEN** it has max_file_size_kb=512, max_files_per_llm_batch=10, summary_max_tokens=80, dir_summary_max_tokens=150
+#### Scenario: Custom scope_root
+- **WHEN** config contains `scope_root: "src/"`
+- **THEN** `LexibraryConfig.scope_root` SHALL be `"src/"`
 
-#### Scenario: Default ignore config includes .aindex and node_modules
-- **WHEN** creating a default IgnoreConfig
-- **THEN** it has use_gitignore=true, additional_patterns includes ".aindex", "lexibrary.toml", "node_modules/", "__pycache__/", ".git/", ".venv/", "venv/", "*.lock"
+#### Scenario: Default max_file_size_kb
+- **WHEN** config is loaded without `crawl.max_file_size_kb`
+- **THEN** `CrawlConfig.max_file_size_kb` SHALL default to `512`
 
-#### Scenario: Pydantic validates the entire config
-- **WHEN** creating a LexibraryConfig with all sub-configs
-- **THEN** all sub-configs (LLMConfig, TokenizerConfig, ASTConfig, etc.) are validated and accessible as attributes
-
-#### Scenario: Default AST config enables all supported languages
-- **WHEN** creating a default ASTConfig
-- **THEN** it has enabled=True and languages=["python", "typescript", "javascript"]
-
-#### Scenario: AST config can be disabled
-- **WHEN** creating an ASTConfig with enabled=False
-- **THEN** the enabled field is False and the model validates
-
-#### Scenario: AST config can restrict languages
-- **WHEN** creating an ASTConfig with languages=["python"]
-- **THEN** only "python" is in the languages list
+#### Scenario: Large file skipped
+- **WHEN** a file exceeds `max_file_size_kb` during `update_project`
+- **THEN** the file SHALL be skipped with a log warning
 
 ### Requirement: Config file discovery
 The system SHALL search for the project config at `.lexibrary/config.yaml` relative to the project root (found via `find_project_root()`). The global config SHALL be read from `~/.config/lexibrarian/config.yaml` (XDG base directory).
@@ -69,15 +57,15 @@ The system SHALL load YAML files via PyYAML, validate against the Pydantic schem
 - **THEN** the merged config has the project's LLM provider and global defaults for all other fields
 
 ### Requirement: Config template for initialization
-The system SHALL provide a DEFAULT_CONFIG_TEMPLATE string that serves as a starter `lexibrary.toml` with all sections, sensible defaults, and explanatory comments.
+DEFAULT_CONFIG_TEMPLATE string SHALL include the new `scope_root` and `crawl.max_file_size_kb` fields with defaults and explanatory comments.
 
-#### Scenario: Template contains all config sections
-- **WHEN** reading the DEFAULT_CONFIG_TEMPLATE
-- **THEN** it includes sections for [llm], [tokenizer], [crawl], [ignore], [daemon], [output], [ast] with defaults and inline comments explaining each field
+#### Scenario: Template includes scope_root
+- **WHEN** the config template is rendered
+- **THEN** it SHALL contain `scope_root: "."` with a comment explaining its purpose
 
-#### Scenario: Template includes AST section
-- **WHEN** reading the DEFAULT_CONFIG_TEMPLATE
-- **THEN** it includes an [ast] section with enabled=true and languages list containing python, typescript, javascript
+#### Scenario: Template includes max_file_size_kb
+- **WHEN** the config template is rendered
+- **THEN** it SHALL contain `max_file_size_kb: 512` under the crawl section
 
 ### Requirement: Mapping strategy config stub
 The system SHALL define a `MappingConfig` Pydantic model with a `strategies` field (list of mapping rules, default empty list). The mapping strategies are not evaluated in Phase 1; the model stub locks in the YAML key name so Phase 4 can populate it without breaking existing project configs.

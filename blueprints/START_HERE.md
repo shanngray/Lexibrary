@@ -10,13 +10,22 @@ src/lexibrarian/
 ├── __main__.py
 ├── cli.py                       ← Typer CLI entry point (lexi command)
 ├── exceptions.py                ← LexibraryNotFoundError
+├── archivist/                   ← LLM pipeline for design file + START_HERE generation (Phase 4)
+│   ├── __init__.py              ← Public API re-exports
+│   ├── change_checker.py        ← ChangeLevel enum + check_change() — classify source vs design file drift
+│   ├── dependency_extractor.py  ← Tree-sitter import resolution to project-relative paths
+│   ├── pipeline.py              ← update_file() + update_project() — full generation pipeline
+│   ├── service.py               ← ArchivistService — async BAML calls with provider routing
+│   └── start_here.py            ← generate_start_here() — project-level START_HERE.md generation
 ├── artifacts/                   ← Pydantic 2 models + parser/serializer/writer for all artifact types
 │   ├── __init__.py
 │   ├── aindex.py                ← AIndexFile + AIndexEntry models
 │   ├── aindex_parser.py         ← Parse .aindex files from disk
 │   ├── aindex_serializer.py     ← Serialize AIndexFile to .aindex text
 │   ├── concept.py               ← ConceptFile model
-│   ├── design_file.py           ← DesignFile model
+│   ├── design_file.py           ← DesignFile + DesignFileFrontmatter + StalenessMetadata models
+│   ├── design_file_parser.py    ← Parse design files from disk (full, metadata-only, frontmatter-only)
+│   ├── design_file_serializer.py ← Serialize DesignFile to YAML frontmatter + markdown + footer
 │   ├── guardrail.py             ← GuardrailThread model
 │   └── writer.py                ← write_artifact() — persists any artifact to disk
 ├── ast_parser/                  ← Tree-sitter interface extraction: models, registry, language parsers, canonical renderer
@@ -48,7 +57,7 @@ src/lexibrarian/
 ├── ignore/                      ← pathspec-based ignore pattern matching
 │   ├── __init__.py
 │   ├── gitignore.py             ← Load + parse .gitignore files
-│   ├── matcher.py               ← IgnoreMatcher combining .gitignore + config patterns
+│   ├── matcher.py               ← IgnoreMatcher combining .gitignore + config + .lexignore patterns
 │   └── patterns.py              ← Built-in default ignore patterns
 ├── indexer/                     ← Structural .aindex generation (no LLM): generator + orchestrator
 │   ├── __init__.py
@@ -82,14 +91,15 @@ src/lexibrarian/
 
 | Package | Role |
 | --- | --- |
-| `artifacts` | Pydantic 2 models: `DesignFile`, `AIndexFile`, `ConceptFile`, `GuardrailThread`; plus `aindex_parser`, `aindex_serializer`, `writer` |
+| `archivist` | LLM pipeline for design file + START_HERE generation: `ArchivistService`, `update_file`, `update_project`, `generate_start_here`, `check_change`, `extract_dependencies` |
+| `artifacts` | Pydantic 2 models: `DesignFile`, `AIndexFile`, `ConceptFile`, `GuardrailThread`; plus parsers, serializers, writer |
 | `ast_parser` | Tree-sitter interface extraction: `parse_interface`, `compute_hashes`, `hash_interface`; `InterfaceSkeleton` model; Python / TypeScript / JavaScript parsers; `render_skeleton` canonical renderer |
-| `config` | `LexibraryConfig` schema, two-tier YAML loader, default config template |
-| `crawler` | `full_crawl()` orchestrator; discovery, file reading, change detection (LLM-based; partially broken — see crawler/engine.md) |
-| `daemon` | `DaemonService` — watchdog + debounce + periodic sweep |
-| `ignore` | `IgnoreMatcher` combining `.gitignore` + config patterns via pathspec |
-| `indexer` | Structural `.aindex` pipeline: `generate_aindex` → `serialize_aindex` → `write_artifact`; no LLM |
-| `init` | `create_lexibrary_skeleton()` — creates `.lexibrary/` on `lexi init` |
+| `config` | `LexibraryConfig` schema (incl. `scope_root`, `ASTConfig`), two-tier YAML loader, default config template |
+| `crawler` | `full_crawl()` orchestrator; discovery, file reading, change detection (LLM-based; partially broken -- see crawler/engine.md) |
+| `daemon` | `DaemonService` -- watchdog + debounce + periodic sweep |
+| `ignore` | `IgnoreMatcher` combining `.gitignore` + config + `.lexignore` patterns via pathspec |
+| `indexer` | Structural `.aindex` pipeline: `generate_aindex` (with design file frontmatter lookup) -> `serialize_aindex` -> `write_artifact`; no LLM |
+| `init` | `create_lexibrary_skeleton()` -- creates `.lexibrary/` + `.lexignore` on `lexi init` |
 | `llm` | `LLMService` wrapping BAML client; `RateLimiter`; `create_llm_service()` factory |
 | `tokenizer` | `TokenCounter` protocol; tiktoken / anthropic / approximate backends |
 | `utils` | `hash_file`, `detect_language`, `setup_logging`, `find_project_root`, path helpers |
@@ -99,14 +109,19 @@ src/lexibrarian/
 | Task | Read first |
 | --- | --- |
 | Add / modify a CLI command | `blueprints/src/lexibrarian/cli.md` |
+| Modify design file generation pipeline | `blueprints/src/lexibrarian/archivist/pipeline.md` |
+| Change archivist LLM service or provider routing | `blueprints/src/lexibrarian/archivist/service.md` |
+| Change change detection logic | `blueprints/src/lexibrarian/archivist/change_checker.md` |
+| Modify START_HERE generation | `blueprints/src/lexibrarian/archivist/start_here.md` |
 | Add a language parser or modify AST extraction | `blueprints/src/lexibrarian/ast_parser/` |
 | Change config keys or defaults | `blueprints/src/lexibrarian/config/` |
 | Modify crawl logic (LLM-based) | `blueprints/src/lexibrarian/crawler/engine.md` |
 | Modify structural indexing (no LLM) | `blueprints/src/lexibrarian/indexer/` |
-| Change ignore patterns | `blueprints/src/lexibrarian/ignore/` |
+| Change ignore patterns or .lexignore | `blueprints/src/lexibrarian/ignore/` |
 | Add / modify LLM prompts | `baml_src/` (source-of-truth for prompts) |
 | Change artifact data models | `blueprints/src/lexibrarian/artifacts/` |
 | Change `.aindex` file format | `blueprints/src/lexibrarian/artifacts/aindex_serializer.md` + `aindex_parser.md` |
+| Change design file format | `blueprints/src/lexibrarian/artifacts/design_file_serializer.md` + `design_file_parser.md` |
 | Modify daemon behavior | `blueprints/src/lexibrarian/daemon/` |
 | Add a tokenizer backend | `blueprints/src/lexibrarian/tokenizer/` |
 | Change `lexi init` scaffolding | `blueprints/src/lexibrarian/init/scaffolder.md` |

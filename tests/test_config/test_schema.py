@@ -96,3 +96,23 @@ def test_crawl_config_extra_fields_ignored() -> None:
 def test_lexibrary_config_has_crawl() -> None:
     config = LexibraryConfig()
     assert isinstance(config.crawl, CrawlConfig)
+
+
+def test_scope_root_default() -> None:
+    config = LexibraryConfig()
+    assert config.scope_root == "."
+
+
+def test_scope_root_custom() -> None:
+    config = LexibraryConfig.model_validate({"scope_root": "src/"})
+    assert config.scope_root == "src/"
+
+
+def test_max_file_size_kb_default() -> None:
+    config = CrawlConfig()
+    assert config.max_file_size_kb == 512
+
+
+def test_max_file_size_kb_custom() -> None:
+    config = LexibraryConfig.model_validate({"crawl": {"max_file_size_kb": 256}})
+    assert config.crawl.max_file_size_kb == 256

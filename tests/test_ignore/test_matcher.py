@@ -123,3 +123,53 @@ def test_create_ignore_matcher_without_gitignore(tmp_path: Path) -> None:
 
     # Gitignore patterns should NOT work
     assert not matcher.is_ignored(tmp_path / "test.pyc")
+
+
+def test_lexignore_patterns_loaded(tmp_path: Path) -> None:
+    """create_ignore_matcher should load .lexignore patterns when the file exists."""
+    from lexibrarian.config.schema import LexibraryConfig
+
+    (tmp_path / ".lexignore").write_text("**/migrations/\n")
+
+    config = LexibraryConfig()
+    config.ignore.use_gitignore = False
+    matcher = create_ignore_matcher(config, tmp_path)
+
+    assert matcher.is_ignored(tmp_path / "app" / "migrations" / "0001_initial.py")
+    assert not matcher.is_ignored(tmp_path / "app" / "models.py")
+
+
+def test_lexignore_missing_is_ok(tmp_path: Path) -> None:
+    """create_ignore_matcher should not raise when .lexignore is absent."""
+    from lexibrarian.config.schema import LexibraryConfig
+
+    config = LexibraryConfig()
+    config.ignore.use_gitignore = False
+    # No .lexignore file — should succeed without error
+    matcher = create_ignore_matcher(config, tmp_path)
+
+    assert not matcher.is_ignored(tmp_path / "src" / "main.py")
+
+
+def test_three_layer_ignore_merge(tmp_path: Path) -> None:
+    """A file ignored by any single layer should be excluded."""
+    from lexibrarian.config.schema import IgnoreConfig, LexibraryConfig
+
+    # .gitignore ignores *.log
+    (tmp_path / ".gitignore").write_text("*.log\n")
+    # .lexignore ignores migrations/
+    (tmp_path / ".lexignore").write_text("**/migrations/\n")
+    # Config ignores *.tmp via additional_patterns
+    config = LexibraryConfig()
+    config.ignore.additional_patterns = ["*.tmp"]
+
+    matcher = create_ignore_matcher(config, tmp_path)
+
+    # Matched by .gitignore layer
+    assert matcher.is_ignored(tmp_path / "debug.log")
+    # Matched by .lexignore layer
+    assert matcher.is_ignored(tmp_path / "app" / "migrations" / "0001.py")
+    # Matched by config layer
+    assert matcher.is_ignored(tmp_path / "scratch.tmp")
+    # Not matched by any layer
+    assert not matcher.is_ignored(tmp_path / "src" / "main.py")

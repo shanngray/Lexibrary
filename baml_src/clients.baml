@@ -40,6 +40,28 @@ client<llm> OllamaClient {
   }
 }
 
+// Archivist clients — Phase 4 (higher token limit for design file generation)
+
+client<llm> AnthropicArchivist {
+  provider anthropic
+  retry_policy DefaultRetry
+  options {
+    model "claude-sonnet-4-6"
+    api_key env.ANTHROPIC_API_KEY
+    max_tokens 1500
+  }
+}
+
+client<llm> OpenAIArchivist {
+  provider openai
+  retry_policy DefaultRetry
+  options {
+    model "gpt-5-mini"
+    api_key env.OPENAI_API_KEY
+    max_completion_tokens 1500
+  }
+}
+
 client<llm> PrimaryClient {
   provider fallback
   retry_policy DefaultRetry

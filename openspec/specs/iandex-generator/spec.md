@@ -4,11 +4,24 @@
 TBD - created by archiving change iandex-format. Update Purpose after archive.
 ## Requirements
 ### Requirement: Generate Markdown from IandexData
-The system SHALL provide a `generate_iandex(data: IandexData) -> str` function in `src/lexibrarian/indexer/generator.py` that transforms an `IandexData` object into a Markdown string following the `.aindex` format specification.
+`generate_iandex(data: IandexData) -> str` function in `src/lexibrarian/indexer/generator.py`. When building file descriptions for the Child Map, the generator SHALL:
+1. Check if a design file exists at `mirror_path(project_root, file)`
+2. If yes → call `parse_design_file_frontmatter(design_file_path)` and use the `description` field
+3. If no → fall back to the structural description: `"{Language} source ({N} lines)"`
 
-#### Scenario: Generate complete iandex content
-- **WHEN** `generate_iandex()` is called with an `IandexData` containing files and subdirectories
-- **THEN** the output SHALL contain an H1 header with the directory name, a summary paragraph, a `## Files` section with a Markdown table, and a `## Subdirectories` section with a Markdown table
+This makes `.aindex` descriptions richer as design files are created, while maintaining backwards compatibility.
+
+#### Scenario: File with design file gets frontmatter description
+- **WHEN** `generate_iandex()` processes a file that has a corresponding design file
+- **THEN** the Child Map description SHALL use the `description` from the design file's YAML frontmatter
+
+#### Scenario: File without design file gets structural description
+- **WHEN** `generate_iandex()` processes a file that has no corresponding design file
+- **THEN** the Child Map description SHALL use the structural fallback format: `"{Language} source ({N} lines)"`
+
+#### Scenario: Design file with empty description
+- **WHEN** `generate_iandex()` processes a file whose design file has an empty description
+- **THEN** the Child Map description SHALL fall back to the structural description
 
 ### Requirement: H1 header is directory name
 The generated Markdown SHALL start with an H1 header (`# `) containing the directory name.
