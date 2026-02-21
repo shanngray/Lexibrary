@@ -185,7 +185,8 @@ def parse_design_file(path: Path) -> DesignFile | None:
     complexity_warning = _section_text("Complexity Warning") or None
     wikilinks = _wikilink_list("Wikilinks")
     tags = _bullet_list("Tags")
-    guardrail_refs = _bullet_list("Guardrails")
+    # Recognize both "## Stack" (new) and "## Guardrails" (legacy) for backward compat
+    stack_refs = _bullet_list("Stack") or _bullet_list("Guardrails")
 
     # --- Metadata footer ---
     footer_match = _FOOTER_RE.search(text)
@@ -213,6 +214,6 @@ def parse_design_file(path: Path) -> DesignFile | None:
         complexity_warning=complexity_warning,
         wikilinks=wikilinks,
         tags=tags,
-        guardrail_refs=guardrail_refs,
+        stack_refs=stack_refs,
         metadata=metadata,
     )

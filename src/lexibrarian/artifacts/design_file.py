@@ -39,5 +39,5 @@ class DesignFile(BaseModel):
     complexity_warning: str | None = None
     wikilinks: list[str] = []
     tags: list[str] = []
-    guardrail_refs: list[str] = []
+    stack_refs: list[str] = []
     metadata: StalenessMetadata

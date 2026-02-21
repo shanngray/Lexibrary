@@ -1,26 +1,27 @@
-"""Wikilink resolver — maps ``[[wikilinks]]`` to concept files or guardrails."""
+"""Wikilink resolver — maps ``[[wikilinks]]`` to concept files or stack posts."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 from difflib import get_close_matches
+from pathlib import Path
 
 from lexibrarian.artifacts.concept import ConceptFile
 from lexibrarian.wiki.index import ConceptIndex
 
 _BRACKET_RE = re.compile(r"^\[\[(.+?)\]\]$")
-_GUARDRAIL_RE = re.compile(r"^GR-\d{3,}$", re.IGNORECASE)
+_STACK_RE = re.compile(r"^ST-\d{3,}$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
 class ResolvedLink:
-    """A wikilink that was successfully resolved to a concept or guardrail."""
+    """A wikilink that was successfully resolved to a concept or stack post."""
 
     raw: str
-    target: str
-    kind: str  # "concept", "guardrail", or "alias"
-    concept: ConceptFile | None = None
+    name: str
+    kind: str  # "concept", "stack", or "alias"
+    path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -37,15 +38,21 @@ class WikilinkResolver:
     Resolution chain (first match wins):
 
     1. Strip ``[[`` / ``]]`` brackets if present.
-    2. If the text matches ``GR-NNN`` guardrail pattern, resolve as guardrail.
+    2. If the text matches ``ST-NNN`` stack pattern, scan *stack_dir* for
+       a matching ``ST-NNN-*.md`` file and resolve as stack post.
     3. Exact concept name match (case-insensitive).
     4. Alias match (case-insensitive).
     5. Fuzzy match via :func:`difflib.get_close_matches`.
     6. Unresolved — attach up to 3 suggestions from fuzzy matching.
     """
 
-    def __init__(self, index: ConceptIndex) -> None:
+    def __init__(
+        self,
+        index: ConceptIndex,
+        stack_dir: Path | None = None,
+    ) -> None:
         self._index = index
+        self._stack_dir = stack_dir
 
     def resolve(self, raw: str) -> ResolvedLink | UnresolvedLink:
         """Resolve a single wikilink string.
@@ -54,22 +61,28 @@ class WikilinkResolver:
         """
         stripped = _strip_brackets(raw)
 
-        # Guardrail pattern (GR-001, GR-042, etc.)
-        if _GUARDRAIL_RE.match(stripped):
-            return ResolvedLink(
-                raw=raw,
-                target=stripped.upper(),
-                kind="guardrail",
-            )
+        # Stack post pattern (ST-001, ST-042, etc.)
+        if _STACK_RE.match(stripped):
+            stack_id = stripped.upper()
+            path = self._find_stack_file(stack_id)
+            if path is not None:
+                return ResolvedLink(
+                    raw=raw,
+                    name=stack_id,
+                    kind="stack",
+                    path=path,
+                )
+            # Stack ID pattern matched but no file found — unresolved
+            return UnresolvedLink(raw=raw)
 
         # Exact name match
         concept = self._find_exact(stripped)
         if concept is not None:
             return ResolvedLink(
                 raw=raw,
-                target=concept.frontmatter.title,
+                name=concept.frontmatter.title,
                 kind="concept",
-                concept=concept,
+                path=None,
             )
 
         # Alias match
@@ -77,9 +90,9 @@ class WikilinkResolver:
         if concept is not None:
             return ResolvedLink(
                 raw=raw,
-                target=concept.frontmatter.title,
+                name=concept.frontmatter.title,
                 kind="alias",
-                concept=concept,
+                path=None,
             )
 
         # Fuzzy match
@@ -95,9 +108,9 @@ class WikilinkResolver:
                 if concept is not None:
                     return ResolvedLink(
                         raw=raw,
-                        target=concept.frontmatter.title,
+                        name=concept.frontmatter.title,
                         kind="concept",
-                        concept=concept,
+                        path=None,
                     )
 
             # Return as unresolved with suggestions
@@ -120,6 +133,16 @@ class WikilinkResolver:
             else:
                 unresolved.append(result)
         return resolved, unresolved
+
+    def _find_stack_file(self, stack_id: str) -> Path | None:
+        """Find a stack post file matching the given ID via glob."""
+        if self._stack_dir is None or not self._stack_dir.is_dir():
+            return None
+        pattern = f"{stack_id}-*.md"
+        matches = list(self._stack_dir.glob(pattern))
+        if matches:
+            return matches[0]
+        return None
 
     def _find_exact(self, name: str) -> ConceptFile | None:
         """Find concept by exact title (case-insensitive)."""

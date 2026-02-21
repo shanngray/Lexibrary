@@ -45,23 +45,16 @@ The system SHALL define a `ConceptFile` Pydantic 2 model representing a concept 
 - **WHEN** creating a `ConceptFile` with name and summary
 - **THEN** the model validates successfully with list fields defaulting to empty lists and metadata defaulting to None
 
-### Requirement: GuardrailThread model
-The system SHALL define a `GuardrailThread` Pydantic 2 model representing a guardrail thread. Fields SHALL include: `thread_id` (str), `title` (str), `status` (Literal["active", "resolved", "stale"]), `scope` (list[str]), `reported_by` (str), `date` (date), `problem` (str), `failed_approaches` (list[str]), `resolution` (str | None), `evidence` (list[str]).
-
-#### Scenario: GuardrailThread validates active thread
-- **WHEN** creating a `GuardrailThread` with thread_id="GR-001", title, status="active", scope, reported_by, date, and problem
-- **THEN** the model validates successfully with resolution defaulting to None
-
-#### Scenario: GuardrailThread status is constrained
-- **WHEN** creating a `GuardrailThread` with status="invalid"
-- **THEN** Pydantic raises a ValidationError
-
 ### Requirement: Artifacts module exports
-`src/lexibrarian/artifacts/__init__.py` SHALL re-export: DesignFile, DesignFileFrontmatter, AIndexFile, ConceptFile, GuardrailThread, StalenessMetadata.
+`src/lexibrarian/artifacts/__init__.py` SHALL re-export: DesignFile, DesignFileFrontmatter, AIndexFile, ConceptFile, StalenessMetadata. The `GuardrailThread` export SHALL be removed.
 
 #### Scenario: DesignFileFrontmatter importable from artifacts
 - **WHEN** `from lexibrarian.artifacts import DesignFileFrontmatter` is used
 - **THEN** the import SHALL succeed
+
+#### Scenario: GuardrailThread no longer exported
+- **WHEN** `from lexibrarian.artifacts import GuardrailThread` is attempted
+- **THEN** the import SHALL raise `ImportError`
 
 ### Requirement: DesignFileFrontmatter model
 The `src/lexibrarian/artifacts/design_file.py` module SHALL export a `DesignFileFrontmatter` Pydantic 2 model with fields:

@@ -63,7 +63,11 @@ The system SHALL have `src/lexibrarian/artifacts/` as a proper Python package wi
 
 #### Scenario: artifacts package has module files
 - **WHEN** inspecting `src/lexibrarian/artifacts/`
-- **THEN** it contains `__init__.py`, `design_file.py`, `aindex.py`, `concept.py`, and `guardrail.py`
+- **THEN** it contains `__init__.py`, `design_file.py`, `aindex.py`, and `concept.py` (guardrail.py removed)
+
+#### Scenario: stack module exists
+- **WHEN** inspecting `src/lexibrarian/stack/`
+- **THEN** it contains `__init__.py`, `models.py`, `parser.py`, `serializer.py`, `template.py`, `index.py`, and `mutations.py`
 
 ### Requirement: exceptions module
 The system SHALL have `src/lexibrarian/exceptions.py` containing all project-level exception classes, starting with `LexibraryNotFoundError`.
@@ -71,4 +75,15 @@ The system SHALL have `src/lexibrarian/exceptions.py` containing all project-lev
 #### Scenario: exceptions module is importable
 - **WHEN** importing `from lexibrarian.exceptions import LexibraryNotFoundError`
 - **THEN** the import succeeds without error
+
+### Requirement: Stack directory in scaffolding
+`lexi init` SHALL create a `.lexibrary/stack/` directory (instead of `.lexibrary/guardrails/`) in the project skeleton.
+
+#### Scenario: Init creates stack directory
+- **WHEN** running `lexi init` in an empty directory
+- **THEN** `.lexibrary/stack/` SHALL be created
+
+#### Scenario: Init does not create guardrails directory
+- **WHEN** running `lexi init` in an empty directory
+- **THEN** `.lexibrary/guardrails/` SHALL NOT be created
 

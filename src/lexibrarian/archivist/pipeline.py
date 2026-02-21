@@ -291,7 +291,7 @@ async def update_file(
         complexity_warning=output.complexity_warning,
         wikilinks=list(output.wikilinks) if output.wikilinks else [],
         tags=list(output.tags) if output.tags else [],
-        guardrail_refs=[],
+        stack_refs=[],
         metadata=StalenessMetadata(
             source=rel_path,
             source_hash=content_hash,

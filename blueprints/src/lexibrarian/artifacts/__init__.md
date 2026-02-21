@@ -4,7 +4,7 @@
 
 ## Re-exports
 
-`AIndexEntry`, `AIndexFile`, `ConceptFile`, `DesignFile`, `DesignFileFrontmatter`, `GuardrailThread`, `StalenessMetadata`
+`AIndexEntry`, `AIndexFile`, `ConceptFile`, `ConceptFileFrontmatter`, `DesignFile`, `DesignFileFrontmatter`, `StalenessMetadata`
 
 ## Dependents
 

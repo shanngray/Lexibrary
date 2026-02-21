@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 
 import pytest
 from pydantic import ValidationError
@@ -10,7 +10,6 @@ from pydantic import ValidationError
 from lexibrarian.artifacts.aindex import AIndexEntry, AIndexFile
 from lexibrarian.artifacts.concept import ConceptFile, ConceptFileFrontmatter
 from lexibrarian.artifacts.design_file import DesignFile, DesignFileFrontmatter, StalenessMetadata
-from lexibrarian.artifacts.guardrail import GuardrailThread
 
 # ---------------------------------------------------------------------------
 # StalenessMetadata
@@ -77,11 +76,11 @@ class TestDesignFile:
             complexity_warning="high",
             wikilinks=["[[bar]]"],
             tags=["auth"],
-            guardrail_refs=["GR-001"],
+            stack_refs=["ST-001"],
             metadata=StalenessMetadata(**_meta()),
         )
         assert df.dependencies == ["bar.py"]
-        assert df.guardrail_refs == ["GR-001"]
+        assert df.stack_refs == ["ST-001"]
 
     def test_missing_metadata_raises(self) -> None:
         with pytest.raises(ValidationError):
@@ -208,47 +207,3 @@ class TestConceptFile:
         from lexibrarian.artifacts import ConceptFileFrontmatter as CFF
         assert CF is not None
         assert CFF is not None
-
-
-# ---------------------------------------------------------------------------
-# GuardrailThread
-# ---------------------------------------------------------------------------
-
-class TestGuardrailThread:
-    def test_minimal_valid(self) -> None:
-        gt = GuardrailThread(
-            thread_id="GR-001",
-            title="Don't use eval",
-            status="active",
-            scope=["src/"],
-            reported_by="dev",
-            date=date(2026, 1, 1),
-            problem="eval is dangerous",
-        )
-        assert gt.failed_approaches == []
-        assert gt.resolution is None
-
-    def test_invalid_status_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            GuardrailThread(
-                thread_id="GR-001",
-                title="Bad",
-                status="invalid",  # type: ignore[arg-type]
-                scope=[],
-                reported_by="dev",
-                date=date(2026, 1, 1),
-                problem="test",
-            )
-
-    def test_all_statuses(self) -> None:
-        for status in ("active", "resolved", "stale"):
-            gt = GuardrailThread(
-                thread_id="GR-001",
-                title="Test",
-                status=status,  # type: ignore[arg-type]
-                scope=[],
-                reported_by="dev",
-                date=date(2026, 1, 1),
-                problem="test",
-            )
-            assert gt.status == status

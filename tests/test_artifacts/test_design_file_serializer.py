@@ -114,7 +114,7 @@ class TestSerializeDesignFileOptionalSections:
         assert "## Complexity Warning" not in result
         assert "## Wikilinks" not in result
         assert "## Tags" not in result
-        assert "## Guardrails" not in result
+        assert "## Stack" not in result
 
     def test_tests_section_included_when_set(self) -> None:
         df = _design_file(tests="See tests/test_cli.py")
@@ -142,12 +142,12 @@ class TestSerializeDesignFileOptionalSections:
         assert "- cli" in result
         assert "- entry-point" in result
 
-    def test_guardrails_included(self) -> None:
-        df = _design_file(guardrail_refs=["G-01", "G-02"])
+    def test_stack_refs_included(self) -> None:
+        df = _design_file(stack_refs=["ST-01", "ST-02"])
         result = serialize_design_file(df)
-        assert "## Guardrails" in result
-        assert "- G-01" in result
-        assert "- G-02" in result
+        assert "## Stack" in result
+        assert "- ST-01" in result
+        assert "- ST-02" in result
 
 
 class TestSerializeDesignFileFooter:

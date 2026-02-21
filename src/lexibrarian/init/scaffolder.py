@@ -49,13 +49,13 @@ def create_lexibrary_skeleton(project_root: Path) -> list[Path]:
     created: list[Path] = []
 
     # Directories
-    for subdir in [base, base / "concepts", base / "guardrails"]:
+    for subdir in [base, base / "concepts", base / "stack"]:
         if not subdir.exists():
             subdir.mkdir(parents=True)
             created.append(subdir)
 
     # .gitkeep files for empty directories
-    for gitkeep in [base / "concepts" / ".gitkeep", base / "guardrails" / ".gitkeep"]:
+    for gitkeep in [base / "concepts" / ".gitkeep", base / "stack" / ".gitkeep"]:
         if not gitkeep.exists():
             gitkeep.touch()
             created.append(gitkeep)

@@ -25,10 +25,10 @@ app = typer.Typer(
 )
 
 # ---------------------------------------------------------------------------
-# Guardrail sub-group
+# Stack sub-group
 # ---------------------------------------------------------------------------
-guardrail_app = typer.Typer(help="Guardrail management commands.")
-app.add_typer(guardrail_app, name="guardrail")
+stack_app = typer.Typer(help="Stack Q&A management commands.")
+app.add_typer(stack_app, name="stack")
 
 
 # ---------------------------------------------------------------------------
@@ -378,56 +378,491 @@ def concept_link(
     )
 
 
-@app.command()
-def guardrails(
+# ---------------------------------------------------------------------------
+# Stack commands
+# ---------------------------------------------------------------------------
+
+
+def _stack_dir(project_root: Path) -> Path:
+    """Return the .lexibrary/stack/ directory, creating it if needed."""
+    d = project_root / ".lexibrary" / "stack"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _next_stack_id(stack_dir: Path) -> int:
+    """Scan existing ST-NNN-*.md files and return the next available number."""
+    import re as _re  # noqa: PLC0415
+
+    max_num = 0
+    for f in stack_dir.glob("ST-*-*.md"):
+        m = _re.match(r"ST-(\d+)-", f.name)
+        if m:
+            max_num = max(max_num, int(m.group(1)))
+    return max_num + 1
+
+
+def _slugify(title: str) -> str:
+    """Convert a title to a URL-friendly slug."""
+    import re as _re  # noqa: PLC0415
+
+    slug = title.lower()
+    slug = _re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = slug.strip("-")
+    # Collapse consecutive hyphens
+    slug = _re.sub(r"-+", "-", slug)
+    return slug[:50]
+
+
+def _find_post_path(project_root: Path, post_id: str) -> Path | None:
+    """Find the file path for a post ID (e.g. 'ST-001')."""
+    stack_dir = project_root / ".lexibrary" / "stack"
+    if not stack_dir.is_dir():
+        return None
+    for f in stack_dir.glob(f"{post_id}-*.md"):
+        return f
+    return None
+
+
+@stack_app.command("post")
+def stack_post(
     *,
+    title: Annotated[
+        str,
+        typer.Option("--title", help="Title for the new stack post."),
+    ],
+    tag: Annotated[
+        list[str],
+        typer.Option("--tag", help="Tag for the post (repeatable, at least one required)."),
+    ],
+    bead: Annotated[
+        str | None,
+        typer.Option("--bead", help="Bead ID to associate with the post."),
+    ] = None,
+    file: Annotated[
+        list[str] | None,
+        typer.Option("--file", help="Source file reference (repeatable)."),
+    ] = None,
+    concept: Annotated[
+        list[str] | None,
+        typer.Option("--concept", help="Concept reference (repeatable)."),
+    ] = None,
+) -> None:
+    """Create a new Stack post with auto-assigned ID."""
+    from lexibrarian.stack.template import render_post_template
+
+    project_root = _require_project_root()
+    sd = _stack_dir(project_root)
+
+    if not tag:
+        console.print("[red]At least one --tag is required.[/red]")
+        raise typer.Exit(1)
+
+    next_num = _next_stack_id(sd)
+    post_id = f"ST-{next_num:03d}"
+    slug = _slugify(title)
+    filename = f"{post_id}-{slug}.md"
+    post_path = sd / filename
+
+    content = render_post_template(
+        post_id=post_id,
+        title=title,
+        tags=tag,
+        author="user",
+        bead=bead,
+        refs_files=file,
+        refs_concepts=concept,
+    )
+    post_path.write_text(content, encoding="utf-8")
+
+    rel = post_path.relative_to(project_root)
+    console.print(f"[green]Created[/green] {rel}")
+    console.print(
+        "[dim]Fill in the ## Problem and ### Evidence sections, "
+        "then share the post ID with your team.[/dim]"
+    )
+
+
+@stack_app.command("search")
+def stack_search(
+    query: Annotated[
+        str | None,
+        typer.Argument(help="Search query string."),
+    ] = None,
+    *,
+    tag: Annotated[
+        str | None,
+        typer.Option("--tag", help="Filter by tag."),
+    ] = None,
     scope: Annotated[
         str | None,
-        typer.Option(help="Limit search to a path scope."),
+        typer.Option("--scope", help="Filter by file scope path."),
+    ] = None,
+    status: Annotated[
+        str | None,
+        typer.Option("--status", help="Filter by status (open/resolved/outdated/duplicate)."),
     ] = None,
     concept: Annotated[
         str | None,
-        typer.Option(help="Filter by concept name."),
+        typer.Option("--concept", help="Filter by concept name."),
     ] = None,
 ) -> None:
-    """Search guardrail threads."""
-    _stub("guardrails")
+    """Search Stack posts by query and/or filters."""
+    from rich.table import Table
+
+    from lexibrarian.stack.index import StackIndex
+
+    project_root = _require_project_root()
+    idx = StackIndex.build(project_root)
+
+    # Start with all or query results
+    results = idx.search(query) if query else list(idx)
+
+    # Apply filters
+    if tag:
+        tag_set = {p.frontmatter.id for p in idx.by_tag(tag)}
+        results = [p for p in results if p.frontmatter.id in tag_set]
+    if scope:
+        scope_set = {p.frontmatter.id for p in idx.by_scope(scope)}
+        results = [p for p in results if p.frontmatter.id in scope_set]
+    if status:
+        results = [p for p in results if p.frontmatter.status == status]
+    if concept:
+        concept_set = {p.frontmatter.id for p in idx.by_concept(concept)}
+        results = [p for p in results if p.frontmatter.id in concept_set]
+
+    if not results:
+        console.print("[yellow]No posts found.[/yellow]")
+        return
+
+    table = Table(title="Stack Posts")
+    table.add_column("ID", style="cyan")
+    table.add_column("Status")
+    table.add_column("Votes", justify="right")
+    table.add_column("Title")
+    table.add_column("Tags")
+
+    for post in results:
+        fm = post.frontmatter
+        status_style = {
+            "open": "green",
+            "resolved": "blue",
+            "outdated": "yellow",
+            "duplicate": "red",
+        }.get(fm.status, "dim")
+        table.add_row(
+            fm.id,
+            f"[{status_style}]{fm.status}[/{status_style}]",
+            str(fm.votes),
+            fm.title,
+            ", ".join(fm.tags),
+        )
+
+    console.print(table)
 
 
-@guardrail_app.command("new")
-def guardrail_new(
+@stack_app.command("answer")
+def stack_answer(
+    post_id: Annotated[
+        str,
+        typer.Argument(help="Post ID (e.g. ST-001)."),
+    ],
     *,
-    file: Annotated[
-        str | None,
-        typer.Option(help="Source file the guardrail relates to."),
+    body: Annotated[
+        str,
+        typer.Option("--body", help="Answer body text."),
+    ],
+    author: Annotated[
+        str,
+        typer.Option("--author", help="Author of the answer."),
+    ] = "user",
+) -> None:
+    """Append a new answer to a Stack post."""
+    from lexibrarian.stack.mutations import add_answer
+
+    project_root = _require_project_root()
+    post_path = _find_post_path(project_root, post_id)
+
+    if post_path is None:
+        console.print(f"[red]Post not found:[/red] {post_id}")
+        raise typer.Exit(1)
+
+    updated = add_answer(post_path, author=author, body=body)
+    last_answer = updated.answers[-1]
+    console.print(f"[green]Added answer A{last_answer.number}[/green] to {post_id}")
+
+
+@stack_app.command("vote")
+def stack_vote(
+    post_id: Annotated[
+        str,
+        typer.Argument(help="Post ID (e.g. ST-001)."),
+    ],
+    direction: Annotated[
+        str,
+        typer.Argument(help="Vote direction: 'up' or 'down'."),
+    ],
+    *,
+    answer: Annotated[
+        int | None,
+        typer.Option("--answer", help="Answer number to vote on (omit to vote on post)."),
     ] = None,
-    mistake: Annotated[
+    comment: Annotated[
         str | None,
-        typer.Option(help="Description of the mistake."),
+        typer.Option("--comment", help="Comment (required for downvotes)."),
     ] = None,
-    resolution: Annotated[
+    author: Annotated[
+        str,
+        typer.Option("--author", help="Author of the vote."),
+    ] = "user",
+) -> None:
+    """Record an upvote or downvote on a post or answer."""
+    from lexibrarian.stack.mutations import record_vote
+
+    project_root = _require_project_root()
+
+    if direction not in ("up", "down"):
+        console.print("[red]Direction must be 'up' or 'down'.[/red]")
+        raise typer.Exit(1)
+
+    if direction == "down" and comment is None:
+        console.print("[red]Downvotes require --comment.[/red]")
+        raise typer.Exit(1)
+
+    post_path = _find_post_path(project_root, post_id)
+    if post_path is None:
+        console.print(f"[red]Post not found:[/red] {post_id}")
+        raise typer.Exit(1)
+
+    target = f"A{answer}" if answer is not None else "post"
+
+    try:
+        updated = record_vote(
+            post_path,
+            target=target,
+            direction=direction,
+            author=author,
+            comment=comment,
+        )
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1) from None
+
+    if answer is not None:
+        for a in updated.answers:
+            if a.number == answer:
+                console.print(
+                    f"[green]Recorded {direction}vote[/green] on A{answer} (votes: {a.votes})"
+                )
+                return
+    else:
+        console.print(
+            f"[green]Recorded {direction}vote[/green] on {post_id} "
+            f"(votes: {updated.frontmatter.votes})"
+        )
+
+
+@stack_app.command("accept")
+def stack_accept(
+    post_id: Annotated[
+        str,
+        typer.Argument(help="Post ID (e.g. ST-001)."),
+    ],
+    *,
+    answer_num: Annotated[
+        int,
+        typer.Option("--answer", help="Answer number to accept."),
+    ],
+) -> None:
+    """Mark an answer as accepted and set the post to resolved."""
+    from lexibrarian.stack.mutations import accept_answer
+
+    project_root = _require_project_root()
+    post_path = _find_post_path(project_root, post_id)
+
+    if post_path is None:
+        console.print(f"[red]Post not found:[/red] {post_id}")
+        raise typer.Exit(1)
+
+    try:
+        accept_answer(post_path, answer_num)
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1) from None
+
+    console.print(f"[green]Accepted A{answer_num}[/green] on {post_id} — status set to resolved")
+
+
+@stack_app.command("view")
+def stack_view(
+    post_id: Annotated[
+        str,
+        typer.Argument(help="Post ID (e.g. ST-001)."),
+    ],
+) -> None:
+    """Display the full content of a Stack post."""
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+
+    from lexibrarian.stack.parser import parse_stack_post
+
+    project_root = _require_project_root()
+    post_path = _find_post_path(project_root, post_id)
+
+    if post_path is None:
+        console.print(f"[red]Post not found:[/red] {post_id}")
+        raise typer.Exit(1)
+
+    post = parse_stack_post(post_path)
+    if post is None:
+        console.print(f"[red]Failed to parse post:[/red] {post_id}")
+        raise typer.Exit(1)
+
+    fm = post.frontmatter
+
+    # Header
+    status_style = {
+        "open": "green",
+        "resolved": "blue",
+        "outdated": "yellow",
+        "duplicate": "red",
+    }.get(fm.status, "dim")
+
+    header = (
+        f"[bold]{fm.title}[/bold]\n"
+        f"[{status_style}]{fm.status}[/{status_style}] | "
+        f"Votes: {fm.votes} | Tags: {', '.join(fm.tags)} | "
+        f"Created: {fm.created.isoformat()} | Author: {fm.author}"
+    )
+    if fm.bead:
+        header += f" | Bead: {fm.bead}"
+    if fm.refs.files:
+        header += f"\nFiles: {', '.join(fm.refs.files)}"
+    if fm.refs.concepts:
+        header += f"\nConcepts: {', '.join(fm.refs.concepts)}"
+    if fm.duplicate_of:
+        header += f"\nDuplicate of: {fm.duplicate_of}"
+
+    console.print(Panel(header, title=fm.id, border_style="cyan"))
+
+    # Problem
+    console.print("\n[bold]## Problem[/bold]\n")
+    console.print(Markdown(post.problem))
+
+    # Evidence
+    if post.evidence:
+        console.print("\n[bold]### Evidence[/bold]\n")
+        for item in post.evidence:
+            console.print(f"  - {item}")
+
+    # Answers
+    if post.answers:
+        console.print(f"\n[bold]## Answers ({len(post.answers)})[/bold]\n")
+        for a in post.answers:
+            accepted_badge = " [green](accepted)[/green]" if a.accepted else ""
+            console.print(
+                f"[bold]### A{a.number}[/bold]{accepted_badge}  "
+                f"Votes: {a.votes} | {a.date.isoformat()} | {a.author}"
+            )
+            console.print(Markdown(a.body))
+            if a.comments:
+                console.print("  [dim]Comments:[/dim]")
+                for c in a.comments:
+                    console.print(f"    {c}")
+            console.print()
+    else:
+        console.print("\n[dim]No answers yet.[/dim]")
+
+
+@stack_app.command("list")
+def stack_list(
+    *,
+    status: Annotated[
         str | None,
-        typer.Option(help="How the mistake was resolved."),
+        typer.Option("--status", help="Filter by status."),
+    ] = None,
+    tag: Annotated[
+        str | None,
+        typer.Option("--tag", help="Filter by tag."),
     ] = None,
 ) -> None:
-    """Record a new guardrail thread."""
-    _stub("guardrail new")
+    """List Stack posts with optional filters."""
+    from rich.table import Table
+
+    from lexibrarian.stack.index import StackIndex
+
+    project_root = _require_project_root()
+    idx = StackIndex.build(project_root)
+
+    results = list(idx)
+
+    if status:
+        results = [p for p in results if p.frontmatter.status == status]
+    if tag:
+        tag_set = {p.frontmatter.id for p in idx.by_tag(tag)}
+        results = [p for p in results if p.frontmatter.id in tag_set]
+
+    if not results:
+        console.print("[yellow]No posts found.[/yellow]")
+        return
+
+    table = Table(title="Stack Posts")
+    table.add_column("ID", style="cyan")
+    table.add_column("Status")
+    table.add_column("Votes", justify="right")
+    table.add_column("Title")
+    table.add_column("Tags")
+
+    for post in results:
+        fm = post.frontmatter
+        status_style = {
+            "open": "green",
+            "resolved": "blue",
+            "outdated": "yellow",
+            "duplicate": "red",
+        }.get(fm.status, "dim")
+        table.add_row(
+            fm.id,
+            f"[{status_style}]{fm.status}[/{status_style}]",
+            str(fm.votes),
+            fm.title,
+            ", ".join(fm.tags),
+        )
+
+    console.print(table)
 
 
 @app.command()
 def search(
+    query: Annotated[
+        str | None,
+        typer.Argument(help="Free-text search query."),
+    ] = None,
     *,
     tag: Annotated[
         str | None,
-        typer.Option(help="Tag to search for."),
+        typer.Option("--tag", help="Filter by tag across all artifact types."),
     ] = None,
     scope: Annotated[
         str | None,
-        typer.Option(help="Limit search to a path scope."),
+        typer.Option("--scope", help="Filter by file scope path."),
     ] = None,
 ) -> None:
-    """Search artifacts by tag across the library."""
-    _stub("search")
+    """Search across concepts, design files, and Stack posts."""
+    from lexibrarian.search import unified_search
+
+    if query is None and tag is None and scope is None:
+        console.print("[yellow]Provide a query, --tag, or --scope to search.[/yellow]")
+        raise typer.Exit(1)
+
+    project_root = _require_project_root()
+    results = unified_search(project_root, query=query, tag=tag, scope=scope)
+
+    if not results.has_results():
+        console.print("[yellow]No results found.[/yellow]")
+        return
+
+    results.render(console)
 
 
 @app.command()

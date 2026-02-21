@@ -56,6 +56,15 @@ def _build_index(tmp_path: Path) -> ConceptIndex:
     return ConceptIndex.load(concepts_dir)
 
 
+def _build_stack_dir(tmp_path: Path) -> Path:
+    """Create a stack directory with sample post files."""
+    stack_dir = tmp_path / "stack"
+    stack_dir.mkdir()
+    (stack_dir / "ST-001-auth-question.md").write_text("# ST-001\n", encoding="utf-8")
+    (stack_dir / "ST-042-config-issue.md").write_text("# ST-042\n", encoding="utf-8")
+    return stack_dir
+
+
 # ---------------------------------------------------------------------------
 # Bracket stripping
 # ---------------------------------------------------------------------------
@@ -80,42 +89,63 @@ class TestStripBrackets:
 
 
 # ---------------------------------------------------------------------------
-# Guardrail pattern
+# Stack post pattern (ST-NNN)
 # ---------------------------------------------------------------------------
 
 
-class TestGuardrailResolution:
-    def test_guardrail_pattern(self, tmp_path: Path) -> None:
+class TestStackResolution:
+    def test_stack_pattern_with_file(self, tmp_path: Path) -> None:
         index = _build_index(tmp_path)
-        resolver = WikilinkResolver(index)
-        result = resolver.resolve("GR-001")
+        stack_dir = _build_stack_dir(tmp_path)
+        resolver = WikilinkResolver(index, stack_dir=stack_dir)
+        result = resolver.resolve("ST-001")
         assert isinstance(result, ResolvedLink)
-        assert result.kind == "guardrail"
-        assert result.target == "GR-001"
-        assert result.concept is None
+        assert result.kind == "stack"
+        assert result.name == "ST-001"
+        assert result.path is not None
+        assert result.path.name == "ST-001-auth-question.md"
 
-    def test_guardrail_with_brackets(self, tmp_path: Path) -> None:
+    def test_stack_with_brackets(self, tmp_path: Path) -> None:
         index = _build_index(tmp_path)
-        resolver = WikilinkResolver(index)
-        result = resolver.resolve("[[GR-042]]")
+        stack_dir = _build_stack_dir(tmp_path)
+        resolver = WikilinkResolver(index, stack_dir=stack_dir)
+        result = resolver.resolve("[[ST-042]]")
         assert isinstance(result, ResolvedLink)
-        assert result.kind == "guardrail"
-        assert result.target == "GR-042"
+        assert result.kind == "stack"
+        assert result.name == "ST-042"
 
-    def test_guardrail_case_insensitive(self, tmp_path: Path) -> None:
+    def test_stack_case_insensitive(self, tmp_path: Path) -> None:
         index = _build_index(tmp_path)
-        resolver = WikilinkResolver(index)
-        result = resolver.resolve("gr-123")
+        stack_dir = _build_stack_dir(tmp_path)
+        resolver = WikilinkResolver(index, stack_dir=stack_dir)
+        result = resolver.resolve("st-001")
         assert isinstance(result, ResolvedLink)
-        assert result.kind == "guardrail"
-        assert result.target == "GR-123"
+        assert result.kind == "stack"
+        assert result.name == "ST-001"
 
-    def test_guardrail_four_digits(self, tmp_path: Path) -> None:
+    def test_stack_not_found(self, tmp_path: Path) -> None:
         index = _build_index(tmp_path)
-        resolver = WikilinkResolver(index)
-        result = resolver.resolve("GR-1234")
+        stack_dir = _build_stack_dir(tmp_path)
+        resolver = WikilinkResolver(index, stack_dir=stack_dir)
+        result = resolver.resolve("ST-999")
+        assert isinstance(result, UnresolvedLink)
+        assert result.raw == "ST-999"
+
+    def test_stack_no_stack_dir(self, tmp_path: Path) -> None:
+        index = _build_index(tmp_path)
+        resolver = WikilinkResolver(index)  # no stack_dir
+        result = resolver.resolve("ST-001")
+        assert isinstance(result, UnresolvedLink)
+
+    def test_stack_four_digits(self, tmp_path: Path) -> None:
+        index = _build_index(tmp_path)
+        stack_dir = tmp_path / "stack4"
+        stack_dir.mkdir()
+        (stack_dir / "ST-1234-big-post.md").write_text("# ST-1234\n", encoding="utf-8")
+        resolver = WikilinkResolver(index, stack_dir=stack_dir)
+        result = resolver.resolve("ST-1234")
         assert isinstance(result, ResolvedLink)
-        assert result.kind == "guardrail"
+        assert result.kind == "stack"
 
 
 # ---------------------------------------------------------------------------
@@ -130,9 +160,7 @@ class TestExactNameMatch:
         result = resolver.resolve("Pydantic")
         assert isinstance(result, ResolvedLink)
         assert result.kind == "concept"
-        assert result.target == "Pydantic"
-        assert result.concept is not None
-        assert result.concept.frontmatter.title == "Pydantic"
+        assert result.name == "Pydantic"
 
     def test_exact_match_case_insensitive(self, tmp_path: Path) -> None:
         index = _build_index(tmp_path)
@@ -140,7 +168,7 @@ class TestExactNameMatch:
         result = resolver.resolve("pydantic")
         assert isinstance(result, ResolvedLink)
         assert result.kind == "concept"
-        assert result.target == "Pydantic"
+        assert result.name == "Pydantic"
 
     def test_exact_match_with_brackets(self, tmp_path: Path) -> None:
         index = _build_index(tmp_path)
@@ -148,14 +176,14 @@ class TestExactNameMatch:
         result = resolver.resolve("[[Pydantic]]")
         assert isinstance(result, ResolvedLink)
         assert result.kind == "concept"
-        assert result.target == "Pydantic"
+        assert result.name == "Pydantic"
 
     def test_exact_match_hyphenated(self, tmp_path: Path) -> None:
         index = _build_index(tmp_path)
         resolver = WikilinkResolver(index)
         result = resolver.resolve("Tree-sitter")
         assert isinstance(result, ResolvedLink)
-        assert result.target == "Tree-sitter"
+        assert result.name == "Tree-sitter"
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +198,7 @@ class TestAliasMatch:
         result = resolver.resolve("pydantic-v2")
         assert isinstance(result, ResolvedLink)
         assert result.kind == "alias"
-        assert result.target == "Pydantic"
+        assert result.name == "Pydantic"
 
     def test_alias_with_brackets(self, tmp_path: Path) -> None:
         index = _build_index(tmp_path)
@@ -178,7 +206,7 @@ class TestAliasMatch:
         result = resolver.resolve("[[baml-lang]]")
         assert isinstance(result, ResolvedLink)
         assert result.kind == "alias"
-        assert result.target == "BAML"
+        assert result.name == "BAML"
 
     def test_alias_case_insensitive(self, tmp_path: Path) -> None:
         index = _build_index(tmp_path)
@@ -186,7 +214,7 @@ class TestAliasMatch:
         result = resolver.resolve("PYDANTIC-V2")
         assert isinstance(result, ResolvedLink)
         assert result.kind == "alias"
-        assert result.target == "Pydantic"
+        assert result.name == "Pydantic"
 
 
 # ---------------------------------------------------------------------------
@@ -201,13 +229,12 @@ class TestFuzzyMatch:
         # "Pydanticc" is close to "Pydantic"
         result = resolver.resolve("Pydanticc")
         assert isinstance(result, ResolvedLink)
-        assert result.target == "Pydantic"
+        assert result.name == "Pydantic"
 
     def test_fuzzy_returns_unresolved_with_suggestions(self, tmp_path: Path) -> None:
         index = _build_index(tmp_path)
         resolver = WikilinkResolver(index)
-        # "Pathspe" is close to "Pathspec" but let's use something that
-        # partially matches multiple entries but not closely enough to resolve
+        # "xyzzy_not_real" matches nothing
         result = resolver.resolve("xyzzy_not_real")
         assert isinstance(result, UnresolvedLink)
         assert result.raw == "xyzzy_not_real"
@@ -243,15 +270,17 @@ class TestUnresolved:
 class TestResolveAll:
     def test_resolve_all_mixed(self, tmp_path: Path) -> None:
         index = _build_index(tmp_path)
-        resolver = WikilinkResolver(index)
-        links = ["[[Pydantic]]", "GR-001", "[[baml-lang]]", "UnknownThing12345"]
+        stack_dir = _build_stack_dir(tmp_path)
+        resolver = WikilinkResolver(index, stack_dir=stack_dir)
+        links = ["[[Pydantic]]", "[[ST-001]]", "[[baml-lang]]", "UnknownThing12345"]
         resolved, unresolved = resolver.resolve_all(links)
 
         assert len(resolved) == 3
         assert len(unresolved) == 1
-        assert resolved[0].target == "Pydantic"
-        assert resolved[1].target == "GR-001"
-        assert resolved[2].target == "BAML"
+        assert resolved[0].name == "Pydantic"
+        assert resolved[1].name == "ST-001"
+        assert resolved[1].kind == "stack"
+        assert resolved[2].name == "BAML"
         assert unresolved[0].raw == "UnknownThing12345"
 
     def test_resolve_all_empty(self, tmp_path: Path) -> None:
@@ -284,16 +313,17 @@ class TestResolveAll:
 
 
 class TestResolutionPriority:
-    def test_guardrail_takes_priority_over_concept(self, tmp_path: Path) -> None:
-        """If a concept were named GR-001, guardrail pattern still wins."""
+    def test_stack_takes_priority_over_concept(self, tmp_path: Path) -> None:
+        """If a concept were named ST-001, stack pattern still wins."""
         concepts_dir = tmp_path / "concepts"
         concepts_dir.mkdir()
-        _write_concept(concepts_dir, "GR001.md", "GR-001")
+        _write_concept(concepts_dir, "ST001.md", "ST-001")
         index = ConceptIndex.load(concepts_dir)
-        resolver = WikilinkResolver(index)
-        result = resolver.resolve("GR-001")
+        stack_dir = _build_stack_dir(tmp_path)
+        resolver = WikilinkResolver(index, stack_dir=stack_dir)
+        result = resolver.resolve("ST-001")
         assert isinstance(result, ResolvedLink)
-        assert result.kind == "guardrail"
+        assert result.kind == "stack"
 
     def test_exact_name_takes_priority_over_alias(self, tmp_path: Path) -> None:
         """If one concept is named 'Foo' and another has alias 'Foo',
@@ -307,4 +337,4 @@ class TestResolutionPriority:
         result = resolver.resolve("Foo")
         assert isinstance(result, ResolvedLink)
         assert result.kind == "concept"
-        assert result.target == "Foo"
+        assert result.name == "Foo"

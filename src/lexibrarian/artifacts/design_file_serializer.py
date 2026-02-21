@@ -136,10 +136,10 @@ def serialize_design_file(data: DesignFile) -> str:
             parts.append(f"- {tag}")
         parts.append("")
 
-    if data.guardrail_refs:
-        parts.append("## Guardrails")
+    if data.stack_refs:
+        parts.append("## Stack")
         parts.append("")
-        for ref in data.guardrail_refs:
+        for ref in data.stack_refs:
             parts.append(f"- {ref}")
         parts.append("")
 

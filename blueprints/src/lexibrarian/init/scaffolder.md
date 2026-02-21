@@ -6,7 +6,7 @@
 
 | Name | Signature | Purpose |
 | --- | --- | --- |
-| `create_lexibrary_skeleton` | `(project_root: Path) -> list[Path]` | Create dirs (`concepts/`, `guardrails/`), `.gitkeep` files, template files, and `.lexignore`; return list of paths created |
+| `create_lexibrary_skeleton` | `(project_root: Path) -> list[Path]` | Create dirs (`concepts/`, `stack/`), `.gitkeep` files, template files, and `.lexignore`; return list of paths created |
 | `START_HERE_PLACEHOLDER` | `str` | Placeholder content for `START_HERE.md` before `lexi update` runs |
 | `HANDOFF_PLACEHOLDER` | `str` | Placeholder content for `HANDOFF.md` |
 
@@ -21,5 +21,5 @@
 ## Key Concepts
 
 - Idempotent: checks existence before creating each path; returns empty list if skeleton already exists
-- Creates: `.lexibrary/`, `concepts/`, `guardrails/`, `.gitkeep` files, `config.yaml`, `START_HERE.md`, `HANDOFF.md`
+- Creates: `.lexibrary/`, `concepts/`, `stack/`, `.gitkeep` files, `config.yaml`, `START_HERE.md`, `HANDOFF.md`
 - Creates `.lexignore` at project root (empty file for archivist exclusion patterns)

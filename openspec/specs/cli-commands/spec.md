@@ -130,6 +130,10 @@ All CLI commands SHALL use `rich.console.Console` for output. No command SHALL u
 - **WHEN** any CLI command produces output
 - **THEN** the output is rendered through a Rich Console instance (supporting colors, tables, panels, and progress bars)
 
+#### Scenario: Stack commands use Rich output
+- **WHEN** any `lexi stack` sub-command produces output
+- **THEN** the output is rendered through the same Rich Console instance
+
 ### Requirement: Index command generates .aindex for a directory
 The `lexi index` command SHALL accept a `directory` argument (default `.`) and a `-r`/`--recursive` boolean flag (default `False`). It SHALL require an initialized `.lexibrary/` directory to be present (walk up from CWD to find it), and generate `.aindex` files via the indexer module.
 

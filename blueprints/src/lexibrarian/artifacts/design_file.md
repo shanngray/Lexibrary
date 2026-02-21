@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `DesignFileFrontmatter` | `description: str`, `updated_by: Literal["archivist", "agent"]` (default "archivist") | Agent-editable YAML frontmatter for a design file |
 | `StalenessMetadata` | `source`, `source_hash`, `interface_hash?`, `design_hash?`, `generated: datetime`, `generator` | HTML-comment footer tracking artifact provenance; shared by all artifact types; `design_hash` is set only for design files, not .aindex |
-| `DesignFile` | `source_path`, `frontmatter`, `summary`, `interface_contract`, `dependencies`, `dependents`, `tests?`, `complexity_warning?`, `wikilinks`, `tags`, `guardrail_refs`, `metadata` | Full design file for a single source file |
+| `DesignFile` | `source_path`, `frontmatter`, `summary`, `interface_contract`, `dependencies`, `dependents`, `tests?`, `complexity_warning?`, `wikilinks`, `tags`, `stack_refs`, `metadata` | Full design file for a single source file |
 
 ## Notes
 

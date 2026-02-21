@@ -23,11 +23,13 @@ The system SHALL provide a `serialize_design_file(data: DesignFile) -> str` func
 3. `## Interface Contract` section with fenced code block (language-tagged)
 4. `## Dependencies` section with bullet list (or `(none)`)
 5. `## Dependents` section with bullet list (or `(none)`)
-6. Optional sections (`## Tests`, `## Complexity Warning`, `## Wikilinks`, `## Tags`, `## Guardrails`) omitted when empty/None
+6. Optional sections (`## Tests`, `## Complexity Warning`, `## Wikilinks`, `## Tags`, `## Stack`) omitted when empty/None
 7. HTML comment metadata footer with source, source_hash, interface_hash, design_hash, generated, generator
 8. Trailing newline
 
 The `## Wikilinks` section SHALL serialize each wikilink wrapped in `[[double brackets]]` as a bullet list item. If the wikilink already contains brackets, it SHALL NOT double-wrap.
+
+The `## Stack` section SHALL serialize each stack ref as `- [[ST-NNN]]` in a bullet list. If the ref already contains brackets, it SHALL NOT double-wrap.
 
 #### Scenario: Serialize fully populated design file
 - **WHEN** `serialize_design_file()` is called with a DesignFile containing all fields populated
@@ -35,7 +37,7 @@ The `## Wikilinks` section SHALL serialize each wikilink wrapped in `[[double br
 
 #### Scenario: Serialize minimal design file
 - **WHEN** `serialize_design_file()` is called with a DesignFile where optional fields are empty/None
-- **THEN** optional sections (Tests, Complexity Warning, Wikilinks, Tags, Guardrails) SHALL be omitted from output
+- **THEN** optional sections (Tests, Complexity Warning, Wikilinks, Tags, Stack) SHALL be omitted from output
 
 #### Scenario: Metadata footer format
 - **WHEN** `serialize_design_file()` is called
@@ -49,11 +51,17 @@ The `## Wikilinks` section SHALL serialize each wikilink wrapped in `[[double br
 - **WHEN** `serialize_design_file()` is called with `wikilinks=["[[JWT Auth]]"]` (already bracketed)
 - **THEN** the output SHALL contain `- [[JWT Auth]]` (not `- [[[[JWT Auth]]]]`)
 
+#### Scenario: Stack section uses [[ST-NNN]] format
+- **WHEN** `serialize_design_file()` is called with `stack_refs=["ST-001", "ST-015"]`
+- **THEN** the `## Stack` section SHALL contain `- [[ST-001]]` and `- [[ST-015]]`
+
 ### Requirement: Design file parser
 The system SHALL provide parsing functions in `src/lexibrarian/artifacts/design_file_parser.py`:
 - `parse_design_file(path: Path) -> DesignFile | None` — full parse, returns None if file doesn't exist or is malformed
 - `parse_design_file_metadata(path: Path) -> StalenessMetadata | None` — extracts only the HTML comment footer (cheap, reads from end of file)
 - `parse_design_file_frontmatter(path: Path) -> DesignFileFrontmatter | None` — extracts only the YAML frontmatter
+
+The parser SHALL recognize both `## Stack` and `## Guardrails` section headers for backward compatibility. Both SHALL be parsed into the `stack_refs` field.
 
 The wikilinks parser SHALL strip `[[` and `]]` brackets from wikilink entries when populating the `wikilinks` field of `DesignFile`. It SHALL handle both bracketed (`[[JWT Auth]]`) and unbracketed (`JWT Auth`) formats.
 
@@ -88,6 +96,14 @@ The wikilinks parser SHALL strip `[[` and `]]` brackets from wikilink entries wh
 #### Scenario: Parse unbracketed wikilinks (backward compat)
 - **WHEN** `parse_design_file()` is called on a file with `- JWT Auth` in the Wikilinks section
 - **THEN** the `wikilinks` field SHALL contain `"JWT Auth"`
+
+#### Scenario: Parse ## Stack section
+- **WHEN** `parse_design_file()` is called on a file with `## Stack` section containing `- [[ST-001]]`
+- **THEN** the `stack_refs` field SHALL contain `"ST-001"` (brackets stripped)
+
+#### Scenario: Parse ## Guardrails section (backward compat)
+- **WHEN** `parse_design_file()` is called on a file with `## Guardrails` section containing `- [[ST-001]]`
+- **THEN** the `stack_refs` field SHALL contain `"ST-001"` (treated same as `## Stack`)
 
 ### Requirement: Design file round-trip integrity
 The system SHALL preserve all data through a serialize-write-parse cycle: `serialize_design_file(df)` written to disk and then `parse_design_file(path)` SHALL produce a DesignFile equivalent to the original.

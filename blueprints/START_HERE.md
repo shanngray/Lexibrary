@@ -10,6 +10,7 @@ src/lexibrarian/
 ├── __main__.py
 ├── cli.py                       ← Typer CLI entry point (lexi command)
 ├── exceptions.py                ← LexibraryNotFoundError
+├── search.py                    ← unified_search() — cross-artifact search (concepts, design files, Stack posts)
 ├── archivist/                   ← LLM pipeline for design file + START_HERE generation (Phase 4)
 │   ├── __init__.py              ← Public API re-exports
 │   ├── change_checker.py        ← ChangeLevel enum + check_change() — classify source vs design file drift
@@ -22,11 +23,10 @@ src/lexibrarian/
 │   ├── aindex.py                ← AIndexFile + AIndexEntry models
 │   ├── aindex_parser.py         ← Parse .aindex files from disk
 │   ├── aindex_serializer.py     ← Serialize AIndexFile to .aindex text
-│   ├── concept.py               ← ConceptFile model
+│   ├── concept.py               ← ConceptFile + ConceptFileFrontmatter models
 │   ├── design_file.py           ← DesignFile + DesignFileFrontmatter + StalenessMetadata models
 │   ├── design_file_parser.py    ← Parse design files from disk (full, metadata-only, frontmatter-only)
 │   ├── design_file_serializer.py ← Serialize DesignFile to YAML frontmatter + markdown + footer
-│   ├── guardrail.py             ← GuardrailThread model
 │   └── writer.py                ← write_artifact() — persists any artifact to disk
 ├── ast_parser/                  ← Tree-sitter interface extraction: models, registry, language parsers, canonical renderer
 │   ├── __init__.py              ← Public API: parse_interface(), hash_interface(), compute_hashes()
@@ -71,6 +71,14 @@ src/lexibrarian/
 │   ├── factory.py               ← create_llm_service() factory
 │   ├── rate_limiter.py          ← Token-bucket rate limiter
 │   └── service.py               ← LLMService wrapping BAML async client
+├── stack/                       ← Stack Overflow-style Q&A knowledge base (Phase 6)
+│   ├── __init__.py              ← Public API re-exports
+│   ├── models.py                ← StackPost, StackPostFrontmatter, StackAnswer, StackPostRefs models
+│   ├── index.py                 ← StackIndex — in-memory search/filter of Stack posts
+│   ├── mutations.py             ← add_answer(), record_vote(), accept_answer(), mark_duplicate(), mark_outdated()
+│   ├── parser.py                ← parse_stack_post() — YAML frontmatter + markdown → StackPost
+│   ├── serializer.py            ← serialize_stack_post() — StackPost → markdown string
+│   └── template.py              ← render_post_template() — scaffold new Stack post files
 ├── tokenizer/                   ← Pluggable token counting backends
 │   ├── __init__.py
 │   ├── anthropic_counter.py     ← Anthropic token counting backend
@@ -89,7 +97,7 @@ src/lexibrarian/
     ├── __init__.py              ← Public API re-exports
     ├── index.py                 ← ConceptIndex — in-memory search/retrieval of concept files
     ├── parser.py                ← parse_concept_file() — markdown + YAML frontmatter → ConceptFile
-    ├── resolver.py              ← WikilinkResolver — resolve [[wikilinks]] to concepts or guardrails
+    ├── resolver.py              ← WikilinkResolver — resolve [[wikilinks]] to concepts or Stack posts
     ├── serializer.py            ← serialize_concept_file() — ConceptFile → markdown string
     └── template.py              ← render_concept_template(), concept_file_path() — scaffolding helpers
 ```
@@ -99,7 +107,7 @@ src/lexibrarian/
 | Package | Role |
 | --- | --- |
 | `archivist` | LLM pipeline for design file + START_HERE generation: `ArchivistService`, `update_file`, `update_project`, `generate_start_here`, `check_change`, `extract_dependencies` |
-| `artifacts` | Pydantic 2 models: `DesignFile`, `AIndexFile`, `ConceptFile`, `GuardrailThread`; plus parsers, serializers, writer |
+| `artifacts` | Pydantic 2 models: `DesignFile`, `AIndexFile`, `ConceptFile`; plus parsers, serializers, writer |
 | `ast_parser` | Tree-sitter interface extraction: `parse_interface`, `compute_hashes`, `hash_interface`; `InterfaceSkeleton` model; Python / TypeScript / JavaScript parsers; `render_skeleton` canonical renderer |
 | `config` | `LexibraryConfig` schema (incl. `scope_root`, `ASTConfig`), two-tier YAML loader, default config template |
 | `crawler` | `full_crawl()` orchestrator; discovery, file reading, change detection (LLM-based; partially broken -- see crawler/engine.md) |
@@ -108,9 +116,11 @@ src/lexibrarian/
 | `indexer` | Structural `.aindex` pipeline: `generate_aindex` (with design file frontmatter lookup) -> `serialize_aindex` -> `write_artifact`; no LLM |
 | `init` | `create_lexibrary_skeleton()` -- creates `.lexibrary/` + `.lexignore` on `lexi init` |
 | `llm` | `LLMService` wrapping BAML client; `RateLimiter`; `create_llm_service()` factory |
+| `stack` | Stack Q&A knowledge base: `StackPost`, `StackIndex`, `parse_stack_post`, `serialize_stack_post`, `render_post_template`; mutations: `add_answer`, `record_vote`, `accept_answer`, `mark_duplicate`, `mark_outdated` |
 | `tokenizer` | `TokenCounter` protocol; tiktoken / anthropic / approximate backends |
 | `utils` | `hash_file`, `detect_language`, `setup_logging`, `find_project_root`, path helpers |
 | `wiki` | `ConceptIndex` (search/retrieval by title, alias, tag, substring); `parse_concept_file`; `serialize_concept_file`; `WikilinkResolver` (`ResolvedLink`, `UnresolvedLink`); `render_concept_template`, `concept_file_path` |
+| `search` | `unified_search()` — cross-artifact search across concepts, design files, and Stack posts; `SearchResults` with Rich rendering |
 
 ## Navigation by Intent
 
@@ -136,6 +146,8 @@ src/lexibrarian/
 | Change path utilities | `blueprints/src/lexibrarian/utils/paths.md` |
 | Raise / handle project-not-found | `blueprints/src/lexibrarian/exceptions.md` |
 | Add / modify concept wiki utilities | `blueprints/src/lexibrarian/wiki/` |
+| Add / modify Stack Q&A features | `blueprints/src/lexibrarian/stack/` |
+| Change cross-artifact search | `blueprints/src/lexibrarian/search.md` |
 
 ## Key Constraints
 

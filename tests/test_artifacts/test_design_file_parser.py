@@ -239,7 +239,7 @@ class TestParseDesignFileFull:
         assert df.complexity_warning == "High cyclomatic complexity."
         assert df.wikilinks == ["Config"]
         assert df.tags == ["core"]
-        assert df.guardrail_refs == ["G-01"]
+        assert df.stack_refs == ["G-01"]
         assert df.dependents == ["src/bar.py"]
 
     def test_returns_none_for_nonexistent_file(self, tmp_path: Path) -> None:
@@ -405,3 +405,103 @@ generator: lexibrarian-v2
         df = parse_design_file(f)
         assert df is not None
         assert df.wikilinks == []
+
+
+class TestParseDesignFileStackRefs:
+    """Tests for ## Stack section parsing and backward compat with ## Guardrails."""
+
+    _WITH_STACK_SECTION = """\
+---
+description: File with Stack section.
+updated_by: archivist
+---
+
+# src/example.py
+
+## Interface Contract
+
+```python
+pass
+```
+
+## Dependencies
+
+(none)
+
+## Dependents
+
+(none)
+
+## Stack
+
+- ST-001
+- ST-002
+
+<!-- lexibrarian:meta
+source: src/example.py
+source_hash: abc123
+design_hash: def456
+generated: 2026-01-01T12:00:00
+generator: lexibrarian-v2
+-->
+"""
+
+    _WITH_GUARDRAILS_SECTION = """\
+---
+description: Legacy file with Guardrails section.
+updated_by: archivist
+---
+
+# src/legacy.py
+
+## Interface Contract
+
+```python
+pass
+```
+
+## Dependencies
+
+(none)
+
+## Dependents
+
+(none)
+
+## Guardrails
+
+- G-01
+- G-02
+
+<!-- lexibrarian:meta
+source: src/legacy.py
+source_hash: abc123
+design_hash: def456
+generated: 2026-01-01T12:00:00
+generator: lexibrarian-v2
+-->
+"""
+
+    def test_stack_section_parsed_into_stack_refs(self, tmp_path: Path) -> None:
+        """New ## Stack section is parsed into stack_refs."""
+        f = tmp_path / "stack.md"
+        f.write_text(self._WITH_STACK_SECTION)
+        df = parse_design_file(f)
+        assert df is not None
+        assert df.stack_refs == ["ST-001", "ST-002"]
+
+    def test_guardrails_section_backward_compat(self, tmp_path: Path) -> None:
+        """Legacy ## Guardrails section is parsed into stack_refs for backward compatibility."""
+        f = tmp_path / "legacy.md"
+        f.write_text(self._WITH_GUARDRAILS_SECTION)
+        df = parse_design_file(f)
+        assert df is not None
+        assert df.stack_refs == ["G-01", "G-02"]
+
+    def test_no_stack_section_returns_empty_list(self, tmp_path: Path) -> None:
+        """Files without Stack or Guardrails section return empty stack_refs."""
+        f = tmp_path / "design.md"
+        f.write_text(_FULL_DESIGN_FILE)
+        df = parse_design_file(f)
+        assert df is not None
+        assert df.stack_refs == []

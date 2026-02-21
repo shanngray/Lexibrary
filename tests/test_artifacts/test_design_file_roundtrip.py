@@ -59,7 +59,7 @@ class TestDesignFileRoundtrip:
         assert parsed.complexity_warning is None
         assert parsed.wikilinks == []
         assert parsed.tags == []
-        assert parsed.guardrail_refs == []
+        assert parsed.stack_refs == []
 
     def test_roundtrip_with_all_optional_sections(self, tmp_path: Path) -> None:
         df = _design_file(
@@ -69,7 +69,7 @@ class TestDesignFileRoundtrip:
             complexity_warning="High cyclomatic complexity — 12 branches.",
             wikilinks=["Config", "LLMService"],
             tags=["cli", "entry-point"],
-            guardrail_refs=["G-01", "G-03"],
+            stack_refs=["G-01", "G-03"],
             metadata=_meta(interface_hash="iface_hash_xyz"),
         )
         content = serialize_design_file(df)
@@ -83,7 +83,7 @@ class TestDesignFileRoundtrip:
         assert parsed.complexity_warning == "High cyclomatic complexity — 12 branches."
         assert parsed.wikilinks == ["Config", "LLMService"]
         assert parsed.tags == ["cli", "entry-point"]
-        assert parsed.guardrail_refs == ["G-01", "G-03"]
+        assert parsed.stack_refs == ["G-01", "G-03"]
         assert parsed.metadata.interface_hash == "iface_hash_xyz"
 
     def test_roundtrip_agent_updated_by(self, tmp_path: Path) -> None:
