@@ -122,7 +122,11 @@ def serialize_design_file(data: DesignFile) -> str:
         parts.append("## Wikilinks")
         parts.append("")
         for link in data.wikilinks:
-            parts.append(f"- {link}")
+            # Wrap in [[brackets]] if not already wrapped (avoid double-wrapping)
+            if link.startswith("[[") and link.endswith("]]"):
+                parts.append(f"- {link}")
+            else:
+                parts.append(f"- [[{link}]]")
         parts.append("")
 
     if data.tags:

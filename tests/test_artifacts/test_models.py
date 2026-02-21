@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from lexibrarian.artifacts.aindex import AIndexEntry, AIndexFile
-from lexibrarian.artifacts.concept import ConceptFile
+from lexibrarian.artifacts.concept import ConceptFile, ConceptFileFrontmatter
 from lexibrarian.artifacts.design_file import DesignFile, DesignFileFrontmatter, StalenessMetadata
 from lexibrarian.artifacts.guardrail import GuardrailThread
 
@@ -123,22 +123,91 @@ class TestAIndexFile:
 
 
 # ---------------------------------------------------------------------------
+# ConceptFileFrontmatter
+# ---------------------------------------------------------------------------
+
+class TestConceptFileFrontmatter:
+    def test_defaults(self) -> None:
+        fm = ConceptFileFrontmatter(title="JWT Auth")
+        assert fm.title == "JWT Auth"
+        assert fm.aliases == []
+        assert fm.tags == []
+        assert fm.status == "draft"
+        assert fm.superseded_by is None
+
+    def test_all_fields(self) -> None:
+        fm = ConceptFileFrontmatter(
+            title="JWT Auth",
+            aliases=["json-web-token"],
+            tags=["auth", "security"],
+            status="active",
+        )
+        assert fm.aliases == ["json-web-token"]
+        assert fm.tags == ["auth", "security"]
+        assert fm.status == "active"
+
+    def test_invalid_status_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            ConceptFileFrontmatter(title="Bad", status="archived")  # type: ignore[arg-type]
+
+    def test_deprecated_with_superseded_by(self) -> None:
+        fm = ConceptFileFrontmatter(
+            title="OldAuth",
+            status="deprecated",
+            superseded_by="NewAuth",
+        )
+        assert fm.status == "deprecated"
+        assert fm.superseded_by == "NewAuth"
+
+    def test_all_valid_statuses(self) -> None:
+        for status in ("draft", "active", "deprecated"):
+            fm = ConceptFileFrontmatter(title="Test", status=status)  # type: ignore[arg-type]
+            assert fm.status == status
+
+
+# ---------------------------------------------------------------------------
 # ConceptFile
 # ---------------------------------------------------------------------------
 
 class TestConceptFile:
     def test_minimal_valid(self) -> None:
-        cf = ConceptFile(name="auth", summary="Authentication system")
+        fm = ConceptFileFrontmatter(title="auth")
+        cf = ConceptFile(frontmatter=fm, body="")
+        assert cf.summary == ""
+        assert cf.related_concepts == []
         assert cf.linked_files == []
-        assert cf.metadata is None
+        assert cf.decision_log == []
 
-    def test_with_metadata(self) -> None:
-        cf = ConceptFile(
-            name="auth",
-            summary="Authentication",
-            metadata=StalenessMetadata(**_meta()),
+    def test_name_property(self) -> None:
+        fm = ConceptFileFrontmatter(title="Authentication")
+        cf = ConceptFile(frontmatter=fm)
+        assert cf.name == "Authentication"
+
+    def test_full_fields(self) -> None:
+        fm = ConceptFileFrontmatter(
+            title="JWT Auth",
+            aliases=["json-web-token"],
+            tags=["auth"],
+            status="active",
         )
-        assert cf.metadata is not None
+        cf = ConceptFile(
+            frontmatter=fm,
+            body="# JWT Auth\nSome content",
+            summary="Token-based authentication",
+            related_concepts=["OAuth", "Sessions"],
+            linked_files=["src/auth.py"],
+            decision_log=["Use RS256 algorithm"],
+        )
+        assert cf.name == "JWT Auth"
+        assert cf.related_concepts == ["OAuth", "Sessions"]
+        assert cf.linked_files == ["src/auth.py"]
+        assert cf.decision_log == ["Use RS256 algorithm"]
+
+    def test_importable_from_artifacts(self) -> None:
+        from lexibrarian.artifacts import ConceptFile as CF
+        from lexibrarian.artifacts import ConceptFileFrontmatter as CFF
+        assert CF is not None
+        assert CFF is not None
 
 
 # ---------------------------------------------------------------------------

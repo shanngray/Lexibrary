@@ -207,3 +207,44 @@ class TestSerializeDesignFileFooter:
         df = _design_file(source_path="src/foo.xyz")
         result = serialize_design_file(df)
         assert "```text" in result
+
+
+class TestSerializeDesignFileWikilinkBrackets:
+    """Tests for wikilink [[bracket]] wrapping in serializer (Task 5.3)."""
+
+    def test_unbracketed_wikilinks_get_brackets(self) -> None:
+        """Wikilinks stored without brackets are wrapped in [[]] on output."""
+        df = _design_file(wikilinks=["Config", "LLMService"])
+        result = serialize_design_file(df)
+        assert "- [[Config]]" in result
+        assert "- [[LLMService]]" in result
+
+    def test_already_bracketed_wikilinks_not_double_wrapped(self) -> None:
+        """Wikilinks already in [[brackets]] are not double-wrapped."""
+        df = _design_file(wikilinks=["[[Config]]", "[[LLMService]]"])
+        result = serialize_design_file(df)
+        assert "- [[Config]]" in result
+        assert "- [[LLMService]]" in result
+        # Ensure no double-wrapping
+        assert "[[[[" not in result
+        assert "]]]]" not in result
+
+    def test_mixed_bracketed_and_unbracketed(self) -> None:
+        """Mix of bracketed and unbracketed wikilinks both serialize correctly."""
+        df = _design_file(wikilinks=["Config", "[[LLMService]]"])
+        result = serialize_design_file(df)
+        assert "- [[Config]]" in result
+        assert "- [[LLMService]]" in result
+        assert "[[[[" not in result
+
+    def test_single_unbracketed_wikilink(self) -> None:
+        """A single unbracketed wikilink is correctly wrapped."""
+        df = _design_file(wikilinks=["ErrorHandling"])
+        result = serialize_design_file(df)
+        assert "- [[ErrorHandling]]" in result
+
+    def test_empty_wikilinks_no_section(self) -> None:
+        """Empty wikilinks list produces no Wikilinks section."""
+        df = _design_file(wikilinks=[])
+        result = serialize_design_file(df)
+        assert "## Wikilinks" not in result

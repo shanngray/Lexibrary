@@ -10,8 +10,8 @@ import pytest
 
 from lexibrarian.archivist.change_checker import ChangeLevel
 from lexibrarian.archivist.pipeline import (
-    UpdateStats,
     FileResult,
+    UpdateStats,
     _is_binary,
     _is_within_scope,
     _refresh_parent_aindex,
@@ -272,10 +272,13 @@ class TestUpdateFileUnchanged:
 
         # Compute actual content hash (SHA-256 of raw bytes)
         import hashlib as _hl
+
         actual_hash = _hl.sha256(source.read_bytes()).hexdigest()
 
         _make_design_file(
-            tmp_path, source_rel, source_hash=actual_hash,
+            tmp_path,
+            source_rel,
+            source_hash=actual_hash,
         )
 
         config = _make_config()
@@ -302,7 +305,8 @@ class TestUpdateFileAgentUpdated:
 
         # Create design file with a mismatched design_hash (simulating agent edit)
         _make_design_file(
-            tmp_path, source_rel,
+            tmp_path,
+            source_rel,
             source_hash="old_hash",
             design_hash="agent_changed_this",
         )
@@ -387,7 +391,8 @@ class TestUpdateFileContentOnly:
             mock_hashes.return_value = ("new_content_hash", "same_iface")
 
             _make_design_file(
-                tmp_path, source_rel,
+                tmp_path,
+                source_rel,
                 source_hash="old_content_hash",
                 interface_hash="same_iface",
                 body=body,
@@ -498,9 +503,13 @@ class TestUpdateFileAIndexRefresh:
         source = _make_source_file(tmp_path, source_rel, "def bar(): pass")
 
         # Create parent .aindex with existing entries
-        _make_aindex(tmp_path, "src", [
-            AIndexEntry(name="existing.py", entry_type="file", description="Existing file"),
-        ])
+        _make_aindex(
+            tmp_path,
+            "src",
+            [
+                AIndexEntry(name="existing.py", entry_type="file", description="Existing file"),
+            ],
+        )
 
         config = _make_config()
         archivist = _mock_archivist(summary="Foo module.")
@@ -613,7 +622,11 @@ class TestUpdateProjectDiscovery:
         calls: list[Path] = []
 
         async def fake_update_file(
-            source_path: Path, project_root: Path, cfg: LexibraryConfig, svc: ArchivistService,
+            source_path: Path,
+            project_root: Path,
+            cfg: LexibraryConfig,
+            svc: ArchivistService,
+            **kwargs: object,
         ) -> FileResult:
             calls.append(source_path)
             return FileResult(change=ChangeLevel.UNCHANGED)
@@ -640,7 +653,11 @@ class TestUpdateProjectDiscovery:
         calls: list[Path] = []
 
         async def fake_update_file(
-            source_path: Path, project_root: Path, cfg: LexibraryConfig, svc: ArchivistService,
+            source_path: Path,
+            project_root: Path,
+            cfg: LexibraryConfig,
+            svc: ArchivistService,
+            **kwargs: object,
         ) -> FileResult:
             calls.append(source_path)
             return FileResult(change=ChangeLevel.UNCHANGED)
@@ -665,7 +682,11 @@ class TestUpdateProjectDiscovery:
         calls: list[Path] = []
 
         async def fake_update_file(
-            source_path: Path, project_root: Path, cfg: LexibraryConfig, svc: ArchivistService,
+            source_path: Path,
+            project_root: Path,
+            cfg: LexibraryConfig,
+            svc: ArchivistService,
+            **kwargs: object,
         ) -> FileResult:
             calls.append(source_path)
             return FileResult(change=ChangeLevel.UNCHANGED)
@@ -708,7 +729,11 @@ class TestUpdateProjectStats:
         ]
 
         async def fake_update_file(
-            source_path: Path, project_root: Path, cfg: LexibraryConfig, svc: ArchivistService,
+            source_path: Path,
+            project_root: Path,
+            cfg: LexibraryConfig,
+            svc: ArchivistService,
+            **kwargs: object,
         ) -> FileResult:
             nonlocal call_count
             r = results[call_count]
@@ -749,7 +774,11 @@ class TestUpdateProjectProgressCallback:
             callback_calls.append((path, change))
 
         async def fake_update_file(
-            source_path: Path, project_root: Path, cfg: LexibraryConfig, svc: ArchivistService,
+            source_path: Path,
+            project_root: Path,
+            cfg: LexibraryConfig,
+            svc: ArchivistService,
+            **kwargs: object,
         ) -> FileResult:
             return FileResult(change=ChangeLevel.UNCHANGED)
 
@@ -773,9 +802,13 @@ class TestRefreshParentAindex:
         source.parent.mkdir(parents=True, exist_ok=True)
         source.touch()
 
-        _make_aindex(tmp_path, "src", [
-            AIndexEntry(name="foo.py", entry_type="file", description="Old description"),
-        ])
+        _make_aindex(
+            tmp_path,
+            "src",
+            [
+                AIndexEntry(name="foo.py", entry_type="file", description="Old description"),
+            ],
+        )
 
         result = _refresh_parent_aindex(source, tmp_path, "New description")
         assert result is True
@@ -791,9 +824,13 @@ class TestRefreshParentAindex:
         source.parent.mkdir(parents=True, exist_ok=True)
         source.touch()
 
-        _make_aindex(tmp_path, "src", [
-            AIndexEntry(name="existing.py", entry_type="file", description="Existing"),
-        ])
+        _make_aindex(
+            tmp_path,
+            "src",
+            [
+                AIndexEntry(name="existing.py", entry_type="file", description="Existing"),
+            ],
+        )
 
         result = _refresh_parent_aindex(source, tmp_path, "Brand new file")
         assert result is True
@@ -818,9 +855,149 @@ class TestRefreshParentAindex:
         source.parent.mkdir(parents=True, exist_ok=True)
         source.touch()
 
-        _make_aindex(tmp_path, "src", [
-            AIndexEntry(name="foo.py", entry_type="file", description="Same description"),
-        ])
+        _make_aindex(
+            tmp_path,
+            "src",
+            [
+                AIndexEntry(name="foo.py", entry_type="file", description="Same description"),
+            ],
+        )
 
         result = _refresh_parent_aindex(source, tmp_path, "Same description")
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# update_file — available_concepts forwarding
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFileAvailableConcepts:
+    """Verify available_concepts is passed through to the DesignFileRequest."""
+
+    @pytest.mark.asyncio()
+    async def test_concepts_passed_to_archivist(self, tmp_path: Path) -> None:
+        source_rel = "src/foo.py"
+        source = _make_source_file(tmp_path, source_rel, "def bar(): pass")
+
+        config = _make_config()
+        archivist = _mock_archivist(summary="Foo module.")
+        concepts = ["Authentication", "Caching"]
+
+        with patch("lexibrarian.archivist.pipeline.compute_hashes") as mock_hashes:
+            mock_hashes.return_value = ("hash1", "iface1")
+            with patch(
+                "lexibrarian.archivist.pipeline.check_change",
+                return_value=ChangeLevel.NEW_FILE,
+            ):
+                await update_file(
+                    source,
+                    tmp_path,
+                    config,
+                    archivist,
+                    available_concepts=concepts,
+                )
+
+        # Verify the request passed to generate_design_file includes concepts
+        call_args = archivist.generate_design_file.call_args
+        request = call_args[0][0]
+        assert request.available_concepts == concepts
+
+    @pytest.mark.asyncio()
+    async def test_none_concepts_by_default(self, tmp_path: Path) -> None:
+        source_rel = "src/foo.py"
+        source = _make_source_file(tmp_path, source_rel, "def bar(): pass")
+
+        config = _make_config()
+        archivist = _mock_archivist(summary="Foo module.")
+
+        with patch("lexibrarian.archivist.pipeline.compute_hashes") as mock_hashes:
+            mock_hashes.return_value = ("hash1", "iface1")
+            with patch(
+                "lexibrarian.archivist.pipeline.check_change",
+                return_value=ChangeLevel.NEW_FILE,
+            ):
+                await update_file(source, tmp_path, config, archivist)
+
+        # Verify the request passed to generate_design_file has None concepts
+        call_args = archivist.generate_design_file.call_args
+        request = call_args[0][0]
+        assert request.available_concepts is None
+
+
+# ---------------------------------------------------------------------------
+# update_project — concept loading
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateProjectConceptLoading:
+    """Verify update_project loads concepts and passes them to update_file."""
+
+    @pytest.mark.asyncio()
+    async def test_loads_concepts_from_lexibrary(self, tmp_path: Path) -> None:
+        _make_source_file(tmp_path, "src/foo.py", "def foo(): pass")
+
+        # Create concept files in .lexibrary/concepts/
+        concepts_dir = tmp_path / ".lexibrary" / "concepts"
+        concepts_dir.mkdir(parents=True, exist_ok=True)
+
+        concept_md = concepts_dir / "Authentication.md"
+        concept_md.write_text(
+            "---\ntitle: Authentication\naliases: []\ntags: [security]\n"
+            "status: active\n---\n\nAuth concept body.\n",
+            encoding="utf-8",
+        )
+
+        config = _make_config(scope_root="src")
+        archivist = _mock_archivist()
+
+        captured_concepts: list[list[str] | None] = []
+
+        async def fake_update_file(
+            source_path: Path,
+            project_root: Path,
+            cfg: LexibraryConfig,
+            svc: ArchivistService,
+            available_concepts: list[str] | None = None,
+        ) -> FileResult:
+            captured_concepts.append(available_concepts)
+            return FileResult(change=ChangeLevel.UNCHANGED)
+
+        with patch(
+            "lexibrarian.archivist.pipeline.update_file",
+            side_effect=fake_update_file,
+        ):
+            await update_project(tmp_path, config, archivist)
+
+        assert len(captured_concepts) == 1
+        assert captured_concepts[0] is not None
+        assert "Authentication" in captured_concepts[0]
+
+    @pytest.mark.asyncio()
+    async def test_no_concepts_dir_passes_none(self, tmp_path: Path) -> None:
+        _make_source_file(tmp_path, "src/foo.py", "def foo(): pass")
+
+        config = _make_config(scope_root="src")
+        archivist = _mock_archivist()
+
+        captured_concepts: list[list[str] | None] = []
+
+        async def fake_update_file(
+            source_path: Path,
+            project_root: Path,
+            cfg: LexibraryConfig,
+            svc: ArchivistService,
+            available_concepts: list[str] | None = None,
+        ) -> FileResult:
+            captured_concepts.append(available_concepts)
+            return FileResult(change=ChangeLevel.UNCHANGED)
+
+        with patch(
+            "lexibrarian.archivist.pipeline.update_file",
+            side_effect=fake_update_file,
+        ):
+            await update_project(tmp_path, config, archivist)
+
+        assert len(captured_concepts) == 1
+        # No concepts dir means empty list -> None
+        assert captured_concepts[0] is None

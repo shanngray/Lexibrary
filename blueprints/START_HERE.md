@@ -78,13 +78,20 @@ src/lexibrarian/
 │   ├── base.py                  ← TokenCounter protocol
 │   ├── factory.py               ← Backend selection factory
 │   └── tiktoken_counter.py      ← tiktoken (OpenAI) backend
-└── utils/                       ← Hashing, language detection, logging, paths, root
-    ├── __init__.py
-    ├── hashing.py               ← hash_file() SHA-256 helper
-    ├── languages.py             ← detect_language() by extension
-    ├── logging.py               ← setup_logging() rich handler
-    ├── paths.py                 ← Path helpers for .lexibrary/ layout
-    └── root.py                  ← find_project_root() — walks up to locate .lexibrary/
+├── utils/                       ← Hashing, language detection, logging, paths, root
+│   ├── __init__.py
+│   ├── hashing.py               ← hash_file() SHA-256 helper
+│   ├── languages.py             ← detect_language() by extension
+│   ├── logging.py               ← setup_logging() rich handler
+│   ├── paths.py                 ← Path helpers for .lexibrary/ layout
+│   └── root.py                  ← find_project_root() — walks up to locate .lexibrary/
+└── wiki/                        ← Concept file parser, serializer, template, resolver, and index (Phase 5)
+    ├── __init__.py              ← Public API re-exports
+    ├── index.py                 ← ConceptIndex — in-memory search/retrieval of concept files
+    ├── parser.py                ← parse_concept_file() — markdown + YAML frontmatter → ConceptFile
+    ├── resolver.py              ← WikilinkResolver — resolve [[wikilinks]] to concepts or guardrails
+    ├── serializer.py            ← serialize_concept_file() — ConceptFile → markdown string
+    └── template.py              ← render_concept_template(), concept_file_path() — scaffolding helpers
 ```
 
 ## Package Map
@@ -103,6 +110,7 @@ src/lexibrarian/
 | `llm` | `LLMService` wrapping BAML client; `RateLimiter`; `create_llm_service()` factory |
 | `tokenizer` | `TokenCounter` protocol; tiktoken / anthropic / approximate backends |
 | `utils` | `hash_file`, `detect_language`, `setup_logging`, `find_project_root`, path helpers |
+| `wiki` | `ConceptIndex` (search/retrieval by title, alias, tag, substring); `parse_concept_file`; `serialize_concept_file`; `WikilinkResolver` (`ResolvedLink`, `UnresolvedLink`); `render_concept_template`, `concept_file_path` |
 
 ## Navigation by Intent
 
@@ -127,6 +135,7 @@ src/lexibrarian/
 | Change `lexi init` scaffolding | `blueprints/src/lexibrarian/init/scaffolder.md` |
 | Change path utilities | `blueprints/src/lexibrarian/utils/paths.md` |
 | Raise / handle project-not-found | `blueprints/src/lexibrarian/exceptions.md` |
+| Add / modify concept wiki utilities | `blueprints/src/lexibrarian/wiki/` |
 
 ## Key Constraints
 

@@ -27,6 +27,8 @@ The system SHALL provide a `serialize_design_file(data: DesignFile) -> str` func
 7. HTML comment metadata footer with source, source_hash, interface_hash, design_hash, generated, generator
 8. Trailing newline
 
+The `## Wikilinks` section SHALL serialize each wikilink wrapped in `[[double brackets]]` as a bullet list item. If the wikilink already contains brackets, it SHALL NOT double-wrap.
+
 #### Scenario: Serialize fully populated design file
 - **WHEN** `serialize_design_file()` is called with a DesignFile containing all fields populated
 - **THEN** the output SHALL contain YAML frontmatter, all sections, and HTML comment footer
@@ -39,11 +41,21 @@ The system SHALL provide a `serialize_design_file(data: DesignFile) -> str` func
 - **WHEN** `serialize_design_file()` is called
 - **THEN** the HTML comment footer SHALL use the format `<!-- lexibrarian:meta\nkey: value\n-->` with fields: source, source_hash, interface_hash, design_hash, generated, generator
 
+#### Scenario: Wikilinks serialized with brackets
+- **WHEN** `serialize_design_file()` is called with `wikilinks=["JWT Auth", "Rate Limiting"]`
+- **THEN** the Wikilinks section SHALL contain `- [[JWT Auth]]` and `- [[Rate Limiting]]`
+
+#### Scenario: Wikilinks not double-wrapped
+- **WHEN** `serialize_design_file()` is called with `wikilinks=["[[JWT Auth]]"]` (already bracketed)
+- **THEN** the output SHALL contain `- [[JWT Auth]]` (not `- [[[[JWT Auth]]]]`)
+
 ### Requirement: Design file parser
 The system SHALL provide parsing functions in `src/lexibrarian/artifacts/design_file_parser.py`:
 - `parse_design_file(path: Path) -> DesignFile | None` — full parse, returns None if file doesn't exist or is malformed
 - `parse_design_file_metadata(path: Path) -> StalenessMetadata | None` — extracts only the HTML comment footer (cheap, reads from end of file)
 - `parse_design_file_frontmatter(path: Path) -> DesignFileFrontmatter | None` — extracts only the YAML frontmatter
+
+The wikilinks parser SHALL strip `[[` and `]]` brackets from wikilink entries when populating the `wikilinks` field of `DesignFile`. It SHALL handle both bracketed (`[[JWT Auth]]`) and unbracketed (`JWT Auth`) formats.
 
 #### Scenario: Parse well-formed design file
 - **WHEN** `parse_design_file()` is called on a valid design file with frontmatter, body, and footer
@@ -68,6 +80,14 @@ The system SHALL provide parsing functions in `src/lexibrarian/artifacts/design_
 #### Scenario: Parse file with corrupt footer
 - **WHEN** `parse_design_file_metadata()` is called on a design file with a malformed footer
 - **THEN** it SHALL return None
+
+#### Scenario: Parse bracketed wikilinks
+- **WHEN** `parse_design_file()` is called on a file with `- [[JWT Auth]]` in the Wikilinks section
+- **THEN** the `wikilinks` field SHALL contain `"JWT Auth"` (brackets stripped)
+
+#### Scenario: Parse unbracketed wikilinks (backward compat)
+- **WHEN** `parse_design_file()` is called on a file with `- JWT Auth` in the Wikilinks section
+- **THEN** the `wikilinks` field SHALL contain `"JWT Auth"`
 
 ### Requirement: Design file round-trip integrity
 The system SHALL preserve all data through a serialize-write-parse cycle: `serialize_design_file(df)` written to disk and then `parse_design_file(path)` SHALL produce a DesignFile equivalent to the original.

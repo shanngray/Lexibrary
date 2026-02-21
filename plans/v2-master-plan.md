@@ -7,7 +7,7 @@
 
 ## Strategic Decision: Restructure, Not Scrap
 
-The v1 codebase built a solid foundation of reusable infrastructure. The new vision is substantially richer — design files, wikilinks, concepts, guardrails, START_HERE.md — but the core plumbing survives.
+The v1 codebase built a solid foundation of reusable infrastructure. The new vision is substantially richer — design files, wikilinks, concepts, The Stack, START_HERE.md — but the core plumbing survives.
 
 ### Keep As-Is
 
@@ -23,7 +23,7 @@ The v1 codebase built a solid foundation of reusable infrastructure. The new vis
 
 | Module | What Changes |
 |--------|--------------|
-| `cli.py` | Entirely new command surface (`lookup`, `index`, `concepts`, `guardrails`, `update`, `validate`, `setup`, `describe`) |
+| `cli.py` | Entirely new command surface (`lookup`, `index`, `concepts`, `stack`, `update`, `validate`, `setup`, `describe`, `search`) |
 | `config/schema.py` | Two-tier YAML config (`~/.config/` global + `.lexibrary/config.yaml` project) |
 | `config/loader.py` | Walk up to find `.lexibrary/` instead of `lexibrary.toml` |
 | `crawler/engine.py` | Now orchestrates design files + .aindex, not just .aindex |
@@ -37,10 +37,10 @@ The v1 codebase built a solid foundation of reusable infrastructure. The new vis
 | Module | Purpose |
 |--------|---------|
 | `src/lexibrarian/ast_parser/` | Tree-sitter multi-language AST + interface extraction |
-| `src/lexibrarian/artifacts/` | Pydantic models for design files, .aindex, concepts, guardrails |
+| `src/lexibrarian/artifacts/` | Pydantic models for design files, .aindex, concepts, stack posts |
 | `src/lexibrarian/archivist/` | Orchestrate AST → skeleton → LLM → design file pipeline |
-| `src/lexibrarian/knowledge_graph/` | Wikilink parsing, resolution, concept file management |
-| `src/lexibrarian/guardrails/` | Guardrail thread CRUD + search |
+| `src/lexibrarian/wiki/` | Wikilink parsing, resolution, concept file management (originally `knowledge_graph/`) |
+| `src/lexibrarian/stack/` | Stack post CRUD, voting, search |
 | `src/lexibrarian/init/` | Project init + agent environment rule generation |
 | `src/lexibrarian/validator/` | Consistency checks (links, token bounds, bidirectional deps) |
 
@@ -58,8 +58,8 @@ project-root/
     concepts/            # concept files (cross-cutting knowledge)
       Authentication.md
       MoneyHandling.md
-    guardrails/          # guardrail threads (recorded mistakes + fixes)
-      GR-001-timezone-naive-datetimes.md
+    stack/               # Stack posts (problems, solutions, votes)
+      ST-001-timezone-naive-datetimes.md
     src/                 # design file mirror tree (1:1 within scope_root)
       auth/
         .aindex
@@ -90,9 +90,9 @@ Three-layer ignore: `.gitignore` + `.lexignore` + `config.ignore.additional_patt
 | 2 | Directory Indexes | `.aindex` files in `.lexibrary/` mirror tree | Phase 1 |
 | 3 | AST Parser | Interface skeletons, two-tier hashing | Phase 1 |
 | 4 | Archivist | Design files, START_HERE.md, `lexi update` / `lexi lookup` | Phase 3 |
-| 5 | Knowledge Graph | Concept files, wikilink resolution | Phase 4 |
-| 6 | Guardrail Forum | Guardrail threads, `lexi guardrail new` / `lexi guardrails` | Phase 4 |
-| 7 | Validation & Search | `lexi validate`, `lexi status`, `lexi search` | Phases 4, 5, 6 |
+| 5 | Concepts Wiki | Concept files, wikilink resolution, `lexi concepts` / `lexi concept new` | Phase 4 |
+| 6 | The Stack | Stack posts, voting, `lexi stack post` / `lexi stack search`, unified `lexi search` | Phase 5 (wikilink resolver) |
+| 7 | Validation & Search | `lexi validate`, `lexi status`, `lexi search` (unified) | Phases 4, 5, 6 |
 | 8 | Agent Setup | `lexi setup`, env rules for Claude/Cursor/Codex | Phase 7 |
 | 9 | Daemon & CI | Auto-update on file change, git hooks | Phase 4 |
 | 10 | Query Index | SQLite optimisation (optional) | Phase 7 |
@@ -101,7 +101,7 @@ Three-layer ignore: `.gitignore` + `.lexignore` + `config.ignore.additional_patt
 
 **Parallelisable pairs:**
 - Phase 2 (.aindex) can run alongside Phase 3 (AST)
-- Phase 5 (Knowledge Graph) and Phase 6 (Guardrails) can run in parallel once Phase 4 is complete
+- Phase 5 (Concepts Wiki) and Phase 6 (The Stack) can run in parallel once Phase 4 is complete (Phase 6 depends on Phase 5's wikilink resolver but core model/parser work is independent)
 
 ---
 
@@ -114,7 +114,7 @@ Three-layer ignore: `.gitignore` + `.lexignore` + `config.ignore.additional_patt
 Before writing any further phase, the foundation establishes the decisions everything else builds on:
 
 1. **Config schema** — two-tier YAML, Pydantic 2 models, sensible defaults
-2. **Artifact data models** — Pydantic types for each artifact (design file, .aindex, concept, guardrail). These are the shared vocabulary all later phases write and read.
+2. **Artifact data models** — Pydantic types for each artifact (design file, .aindex, concept, stack post). These are the shared vocabulary all later phases write and read.
 3. **Root resolution** — walk upward from CWD to find `.lexibrary/`; graceful error if not found
 4. **Project init** — `lexi init` creates the correct directory skeleton
 5. **CLI skeleton** — all commands registered with proper help text; non-implemented commands return a clear message
@@ -269,39 +269,74 @@ generator: lexibrarian v0.2.0
 
 ## Phase 5 — Concepts Wiki
 
-**Goal:** `lexi concepts [<topic>]` lists or searches concept files. Wikilinks in design files resolve to concept files. `[[ConceptName]]` in any artifact can be followed.
+**Goal:** A living wiki of cross-cutting concepts maintained by agents alongside code. `lexi concepts` lists/searches. `lexi concept new` creates from template. `lexi concept link` adds wikilinks to design files. Wikilink resolver shared across design files, Stack posts, and concepts.
+
+**Detailed plan:** `plans/phase-5-concepts-wiki.md`
+
+### Key Decisions
+
+- Concept index is a CLI command (`lexi concepts`), NOT embedded in START_HERE.md (D-028)
+- YAML frontmatter with `title`, `aliases`, `tags`, `status` — all mandatory (D-029)
+- Flat `concepts/` directory, hierarchy via wikilinks not filesystem (D-030)
+- Agent-first authoring, no LLM generation of concept content (D-032)
+- `[[ConceptName]]` wikilink format standardised across all artifacts (D-033)
 
 ### Wikilink Resolution
 
-A wikilink `[[Authentication]]` resolves to `.lexibrary/concepts/Authentication.md`. The resolver must:
-1. Check `concepts/` directory for an exact match
-2. Fall back to fuzzy match (case-insensitive, normalised)
-3. Return an unresolved link error if not found (surfaced by `lexi validate`)
+A wikilink `[[Authentication]]` resolves to `.lexibrary/concepts/Authentication.md`. Resolution chain: exact name → alias match (case-insensitive) → fuzzy match → unresolved with suggestions. Guardrail pattern (`GR-NNN`) detected and routed separately.
+
+### New Module: `wiki/`
+
+`src/lexibrarian/wiki/` — resolver, parser, serializer, index, template. The master plan called this `knowledge_graph/` but `wiki/` better reflects the evolved design.
 
 ### What to Watch Out For
 
-- Wikilinks also appear in guardrail threads (Phase 6) — build the resolver as a shared utility
-- Concept files themselves contain wikilinks to other concepts; cycle detection is needed
-- Tags in concept files feed the `lexi search --tag` command (Phase 7) — design the tag storage format here
+- Wikilinks also appear in Stack posts (Phase 6) — resolver is a shared utility
+- Concept files contain wikilinks to other concepts; cycles are allowed (bidirectional relationships) but reported by `lexi validate`
+- Tags in concept files feed the `lexi search --tag` command (Phase 7)
+- Design file wikilink format transitions from plain names to `[[bracketed]]` — parser handles both
 
 ---
 
-## Phase 6 — Guardrail Forum
+## Phase 6 — The Stack
 
-**Goal:** `lexi guardrail new` creates a thread. `lexi guardrails [--scope <path>] [--concept <name>]` searches threads. Design files gain a Guardrails cross-reference section.
+**Goal:** A Stack Overflow–inspired knowledge base where agents record problems, solutions, and hard-won lessons. `lexi stack post` creates a post. `lexi stack search` finds posts. `lexi stack answer`, `lexi stack vote`, `lexi stack accept` manage the Q&A lifecycle. Unified `lexi search` returns results from concepts, design files, and Stack posts in a single query. Design files gain a `## Stack` cross-reference section (replacing `## Guardrails`).
 
-### Thread Numbering
+**Detailed plan:** `plans/phase-6-the-stack.md`
 
-Auto-assign `GR-NNN` IDs by scanning existing threads at creation time. Pad to 3 digits.
+### Key Decisions
 
-### Append-Only Enforcement
+- Renamed from "Guardrail Forum" to "The Stack" — `lexi stack` commands, `.lexibrary/stack/` directory, `ST-NNN` post IDs (D-035)
+- Posts have net vote count (up minus down); downvotes require a comment (D-036, D-042)
+- Tags unified across concepts, design files, and Stack posts — `lexi search --tag` returns all three (D-037, D-038)
+- Post body is append-only (answers, comments); frontmatter is mutable (votes, status) (D-039)
+- Post statuses: `open`, `resolved`, `outdated`, `duplicate` (D-040)
+- Staleness detection: `lexi validate` flags posts whose referenced files have changed (D-041)
+- Optional Bead ID in frontmatter for traceability (D-044)
 
-Guardrail threads are append-only at the application level. The CLI never offers an edit command. This is a soft constraint (users can edit files directly) — documented clearly in the thread format, not enforced by a lock mechanism.
+### Sub-Phases
+
+Phase 6 is structured into sub-phases that can partially overlap:
+
+| Sub-Phase | Name | Depends On | Can Parallel With |
+|-----------|------|------------|-------------------|
+| 6a | Models & Parser/Serializer | Phase 1 (foundation) | 6b (once models stable) |
+| 6b | Stack Index & Search | 6a (models) | 6c |
+| 6c | Mutations & Voting | 6a (models + parser) | 6b |
+| 6d | CLI Commands | 6a, 6b, 6c | — |
+| 6e | Design File Integration | 6a, Phase 4 (design files) | 6b, 6c |
+| 6f | Wikilink Resolver Update | 6a, Phase 5 (resolver) | 6d |
+| 6g | Unified Search (`lexi search`) | 6b, Phase 5 (concept index) | 6d |
+
+**Critical path:** 6a → 6c → 6d
+**Parallelisable:** 6b and 6c can run in parallel once 6a is done. 6e and 6f are independent of 6b/6c.
 
 ### What to Watch Out For
 
-- Thread search needs to scan all guardrail files for scope/concept matches. Phase 7's query index (if adopted) will accelerate this — for now, accept O(n) scan.
-- `lexi validate` (Phase 7) must flag guardrails referencing source files that no longer exist
+- Post ID assignment must scan existing `ST-NNN` files atomically
+- The `## Guardrails` → `## Stack` rename in design files — parser must handle both section names during transition
+- Tags share a namespace across concepts, design files, and Stack posts — tag conventions must be consistent
+- Unified search performance is O(concepts + design_files + stack_posts) — acceptable for MVP, Phase 10 adds SQLite if needed
 
 ---
 
@@ -311,17 +346,17 @@ Guardrail threads are append-only at the application level. The CLI never offers
 
 ### Validation Checks (in order)
 
-1. **Link resolution** — all `[[wikilinks]]` resolve to existing concept files or guardrail threads
+1. **Link resolution** — all `[[wikilinks]]` resolve to existing concept files or Stack posts
 2. **Token bounds** — all generated artifacts within their configured size targets
 3. **Bidirectional consistency** — if A lists B as dependency, B's dependents include A
 4. **File existence** — all referenced source files and test paths still exist
 5. **Hash freshness** — no artifacts have stale `source_hash` values (not yet updated)
-6. **Guardrail references** — guardrail threads only reference existing files/concepts
+6. **Stack post references** — Stack posts only reference existing files/concepts
 
 ### Status Output
 
 `lexi status` shows:
-- Total artifacts: N design files, M .aindex files, K concept files, J guardrail threads
+- Total artifacts: N design files, M .aindex files, K concept files, J Stack posts
 - Stale artifacts: X files need updating
 - Unresolved links: Y broken wikilinks
 - Token budget violations: Z oversized artifacts
@@ -352,7 +387,7 @@ The rules must instruct the agent to:
 - Read `START_HERE.md` + `HANDOFF.md` at session start
 - Run `lexi lookup <file>` before editing a file
 - Run `lexi concepts <topic>` before architectural decisions
-- Run `lexi guardrail new` after hitting a novel error
+- Search `lexi stack search` before debugging; `lexi stack post` after solving a non-trivial bug
 - Run `lexi update` after making changes
 - Rewrite `HANDOFF.md` before session end
 

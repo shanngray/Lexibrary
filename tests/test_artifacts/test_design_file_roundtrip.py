@@ -67,7 +67,7 @@ class TestDesignFileRoundtrip:
             dependents=["src/lexibrarian/__main__.py"],
             tests="See tests/test_cli.py for full coverage.",
             complexity_warning="High cyclomatic complexity — 12 branches.",
-            wikilinks=["[[Config]]", "[[LLMService]]"],
+            wikilinks=["Config", "LLMService"],
             tags=["cli", "entry-point"],
             guardrail_refs=["G-01", "G-03"],
             metadata=_meta(interface_hash="iface_hash_xyz"),
@@ -81,7 +81,7 @@ class TestDesignFileRoundtrip:
         assert parsed.dependents == ["src/lexibrarian/__main__.py"]
         assert parsed.tests == "See tests/test_cli.py for full coverage."
         assert parsed.complexity_warning == "High cyclomatic complexity — 12 branches."
-        assert parsed.wikilinks == ["[[Config]]", "[[LLMService]]"]
+        assert parsed.wikilinks == ["Config", "LLMService"]
         assert parsed.tags == ["cli", "entry-point"]
         assert parsed.guardrail_refs == ["G-01", "G-03"]
         assert parsed.metadata.interface_hash == "iface_hash_xyz"

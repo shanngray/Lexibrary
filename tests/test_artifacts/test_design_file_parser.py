@@ -237,7 +237,7 @@ class TestParseDesignFileFull:
         assert df is not None
         assert df.tests == "See tests/test_foo.py"
         assert df.complexity_warning == "High cyclomatic complexity."
-        assert df.wikilinks == ["[[Config]]"]
+        assert df.wikilinks == ["Config"]
         assert df.tags == ["core"]
         assert df.guardrail_refs == ["G-01"]
         assert df.dependents == ["src/bar.py"]
@@ -260,3 +260,148 @@ class TestParseDesignFileFull:
         f = tmp_path / "no_fm.md"
         f.write_text(content)
         assert parse_design_file(f) is None
+
+
+class TestParseDesignFileWikilinkBrackets:
+    """Tests for wikilink [[bracket]] stripping and backward compatibility (Task 5.4)."""
+
+    _BRACKETED_WIKILINKS = """\
+---
+description: File with bracketed wikilinks.
+updated_by: archivist
+---
+
+# src/example.py
+
+## Interface Contract
+
+```python
+pass
+```
+
+## Dependencies
+
+(none)
+
+## Dependents
+
+(none)
+
+## Wikilinks
+
+- [[Config]]
+- [[LLMService]]
+
+<!-- lexibrarian:meta
+source: src/example.py
+source_hash: abc123
+design_hash: def456
+generated: 2026-01-01T12:00:00
+generator: lexibrarian-v2
+-->
+"""
+
+    _UNBRACKETED_WIKILINKS = """\
+---
+description: File with unbracketed wikilinks (legacy format).
+updated_by: archivist
+---
+
+# src/legacy.py
+
+## Interface Contract
+
+```python
+pass
+```
+
+## Dependencies
+
+(none)
+
+## Dependents
+
+(none)
+
+## Wikilinks
+
+- Config
+- LLMService
+
+<!-- lexibrarian:meta
+source: src/legacy.py
+source_hash: abc123
+design_hash: def456
+generated: 2026-01-01T12:00:00
+generator: lexibrarian-v2
+-->
+"""
+
+    _MIXED_WIKILINKS = """\
+---
+description: File with mixed bracketed and unbracketed wikilinks.
+updated_by: archivist
+---
+
+# src/mixed.py
+
+## Interface Contract
+
+```python
+pass
+```
+
+## Dependencies
+
+(none)
+
+## Dependents
+
+(none)
+
+## Wikilinks
+
+- [[Config]]
+- LLMService
+- [[ErrorHandling]]
+
+<!-- lexibrarian:meta
+source: src/mixed.py
+source_hash: abc123
+design_hash: def456
+generated: 2026-01-01T12:00:00
+generator: lexibrarian-v2
+-->
+"""
+
+    def test_bracketed_wikilinks_stripped(self, tmp_path: Path) -> None:
+        """Parser strips [[]] brackets from wikilinks."""
+        f = tmp_path / "bracketed.md"
+        f.write_text(self._BRACKETED_WIKILINKS)
+        df = parse_design_file(f)
+        assert df is not None
+        assert df.wikilinks == ["Config", "LLMService"]
+
+    def test_unbracketed_wikilinks_backward_compatible(self, tmp_path: Path) -> None:
+        """Parser handles legacy unbracketed wikilinks (no brackets to strip)."""
+        f = tmp_path / "unbracketed.md"
+        f.write_text(self._UNBRACKETED_WIKILINKS)
+        df = parse_design_file(f)
+        assert df is not None
+        assert df.wikilinks == ["Config", "LLMService"]
+
+    def test_mixed_wikilinks_handled(self, tmp_path: Path) -> None:
+        """Parser handles mix of bracketed and unbracketed wikilinks."""
+        f = tmp_path / "mixed.md"
+        f.write_text(self._MIXED_WIKILINKS)
+        df = parse_design_file(f)
+        assert df is not None
+        assert df.wikilinks == ["Config", "LLMService", "ErrorHandling"]
+
+    def test_no_wikilinks_section_returns_empty_list(self, tmp_path: Path) -> None:
+        """Files without a Wikilinks section return an empty list."""
+        f = tmp_path / "design.md"
+        f.write_text(_FULL_DESIGN_FILE)
+        df = parse_design_file(f)
+        assert df is not None
+        assert df.wikilinks == []

@@ -1,19 +1,33 @@
-"""Pydantic 2 model for concept file artifacts."""
+"""Pydantic 2 models for concept file artifacts."""
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
-from lexibrarian.artifacts.design_file import StalenessMetadata
+
+class ConceptFileFrontmatter(BaseModel):
+    """Validated YAML frontmatter for a concept file."""
+
+    title: str
+    aliases: list[str] = []
+    tags: list[str] = []
+    status: Literal["draft", "active", "deprecated"] = "draft"
+    superseded_by: str | None = None
 
 
 class ConceptFile(BaseModel):
-    """Represents a concept file artifact."""
+    """Represents a concept file with validated frontmatter and freeform body."""
 
-    name: str
-    summary: str
+    frontmatter: ConceptFileFrontmatter
+    body: str = ""
+    summary: str = ""
+    related_concepts: list[str] = []
     linked_files: list[str] = []
-    tags: list[str] = []
     decision_log: list[str] = []
-    wikilinks: list[str] = []
-    metadata: StalenessMetadata | None = None
+
+    @property
+    def name(self) -> str:
+        """Return the concept display name from frontmatter."""
+        return self.frontmatter.title

@@ -28,6 +28,7 @@ class DesignFileRequest:
     interface_skeleton: str | None = None
     language: str | None = None
     existing_design_file: str | None = None
+    available_concepts: list[str] | None = None
 
 
 @dataclass
@@ -108,6 +109,7 @@ class ArchivistService:
                 interface_skeleton=request.interface_skeleton,
                 language=request.language,
                 existing_design_file=request.existing_design_file,
+                available_concepts=request.available_concepts,
             )
             return DesignFileResult(
                 source_path=request.source_path,

@@ -5,7 +5,8 @@ function ArchivistGenerateDesignFile(
   source_content: string,
   interface_skeleton: string?,
   language: string?,
-  existing_design_file: string?
+  existing_design_file: string?,
+  available_concepts: string[]?
 ) -> DesignFileOutput {
   client AnthropicArchivist
   prompt #"
@@ -29,6 +30,13 @@ function ArchivistGenerateDesignFile(
     {{ existing_design_file }}
     {% endif %}
 
+    {% if available_concepts %}
+    --- AVAILABLE CONCEPTS (prefer these names for wikilinks) ---
+    {% for concept in available_concepts %}
+    - {{ concept }}
+    {% endfor %}
+    {% endif %}
+
     INSTRUCTIONS:
     1. **summary**: Write a single sentence describing *why* this file exists
        and its role in the project — not just *what* it contains.
@@ -47,6 +55,8 @@ function ArchivistGenerateDesignFile(
        straightforward.
     6. **wikilinks**: List concept names (domain terms, patterns, or
        conventions) that a reader should understand. Use short noun phrases.
+       When available concepts are provided above, prefer using those exact
+       names for wikilinks instead of inventing new ones.
     7. **tags**: Provide 3-7 short lowercase labels categorizing the file
        (e.g. "config", "parser", "pydantic-model", "cli", "async").
 

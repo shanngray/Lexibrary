@@ -4,7 +4,7 @@
 TBD - created by archiving change archivist. Update Purpose after archive.
 ## Requirements
 ### Requirement: update_file function
-The system SHALL provide `async update_file(source_path, project_root, config, archivist) -> ChangeLevel` in `src/lexibrarian/archivist/pipeline.py` that generates or updates the design file for a single source file.
+The system SHALL provide `async update_file(source_path, project_root, config, archivist, available_concepts: list[str] | None = None) -> ChangeLevel` in `src/lexibrarian/archivist/pipeline.py` that generates or updates the design file for a single source file.
 
 The pipeline for a single file SHALL:
 1. Check `scope_root` — skip if file is outside scope
@@ -17,6 +17,8 @@ The pipeline for a single file SHALL:
 8. Validate token budget
 9. Serialize and write design file
 10. Refresh parent `.aindex` Child Map entry with frontmatter description
+
+When building the `DesignFileRequest`, the function SHALL pass `available_concepts` to the request if provided.
 
 #### Scenario: New file gets design file
 - **WHEN** `update_file()` is called for a file with no existing design file
@@ -54,6 +56,10 @@ The pipeline for a single file SHALL:
 - **WHEN** `update_file()` successfully creates or updates a design file
 - **THEN** the parent directory's `.aindex` Child Map entry SHALL be updated with the description from the design file frontmatter
 
+#### Scenario: Available concepts passed to request
+- **WHEN** `update_file()` is called with `available_concepts=["JWT Auth", "Rate Limiting"]`
+- **THEN** the `DesignFileRequest` SHALL include `available_concepts=["JWT Auth", "Rate Limiting"]`
+
 ### Requirement: update_project function
 The system SHALL provide `async update_project(project_root, config, archivist, progress_callback?) -> UpdateStats` that updates all design files for the project.
 
@@ -61,9 +67,10 @@ The pipeline SHALL:
 1. Create IgnoreMatcher (includes `.lexignore`)
 2. Discover all source files within `scope_root`
 3. Filter: skip `.lexibrary/` contents, binary files, files outside scope
-4. For each file: call `update_file()` (sequential)
-5. After all files: call `generate_start_here()`
-6. Return UpdateStats
+4. Build concept name list from `.lexibrary/concepts/` if the directory exists
+5. For each file: call `update_file()` with `available_concepts` (sequential)
+6. After all files: call `generate_start_here()`
+7. Return UpdateStats
 
 #### Scenario: Discovers files within scope
 - **WHEN** `update_project()` runs with `scope_root` set to `"src/"`
@@ -80,6 +87,14 @@ The pipeline SHALL:
 #### Scenario: Stats correctly tracked
 - **WHEN** `update_project()` completes
 - **THEN** `UpdateStats` SHALL accurately reflect counts for scanned, unchanged, agent_updated, updated, created, failed, aindex_refreshed, and token_budget_warnings
+
+#### Scenario: Concept names loaded for pipeline
+- **WHEN** `update_project()` runs and `.lexibrary/concepts/` contains 3 concept files
+- **THEN** all `update_file()` calls SHALL receive `available_concepts` with 3 concept names
+
+#### Scenario: No concepts directory
+- **WHEN** `update_project()` runs and `.lexibrary/concepts/` doesn't exist
+- **THEN** `update_file()` calls SHALL receive `available_concepts=None`
 
 ### Requirement: UpdateStats tracking
 The system SHALL provide an `UpdateStats` dataclass with fields: `files_scanned`, `files_unchanged`, `files_agent_updated`, `files_updated`, `files_created`, `files_failed`, `aindex_refreshed`, `token_budget_warnings` (all int, default 0).

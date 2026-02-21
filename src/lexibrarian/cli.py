@@ -19,8 +19,7 @@ console = Console()
 app = typer.Typer(
     name="lexibrarian",
     help=(
-        "AI-friendly codebase indexer. "
-        "Maintains a .lexibrary/ library for LLM context navigation."
+        "AI-friendly codebase indexer. Maintains a .lexibrary/ library for LLM context navigation."
     ),
     no_args_is_help=True,
 )
@@ -36,14 +35,14 @@ app.add_typer(guardrail_app, name="guardrail")
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _require_project_root() -> Path:
     """Resolve the project root or exit with a friendly error."""
     try:
         return find_project_root()
     except LexibraryNotFoundError:
         console.print(
-            "[red]No .lexibrary/ directory found.[/red] "
-            "Run [cyan]lexi init[/cyan] to create one."
+            "[red]No .lexibrary/ directory found.[/red] Run [cyan]lexi init[/cyan] to create one."
         )
         raise typer.Exit(1) from None
 
@@ -57,6 +56,7 @@ def _stub(name: str) -> None:
 # ---------------------------------------------------------------------------
 # init — fully implemented
 # ---------------------------------------------------------------------------
+
 
 @app.command()
 def init(
@@ -74,13 +74,9 @@ def init(
     created = create_lexibrary_skeleton(project_root)
 
     if not created:
-        console.print(
-            "[yellow].lexibrary/ already exists.[/yellow] No files were overwritten."
-        )
+        console.print("[yellow].lexibrary/ already exists.[/yellow] No files were overwritten.")
     else:
-        console.print(
-            f"[green]Created .lexibrary/ skeleton[/green] ({len(created)} items)"
-        )
+        console.print(f"[green]Created .lexibrary/ skeleton[/green] ({len(created)} items)")
 
     if agent:
         console.print(
@@ -92,6 +88,7 @@ def init(
 # ---------------------------------------------------------------------------
 # Stub commands
 # ---------------------------------------------------------------------------
+
 
 @app.command()
 def lookup(
@@ -135,9 +132,7 @@ def lookup(
     metadata = parse_design_file_metadata(design_path)
     if metadata is not None:
         try:
-            current_hash = hashlib.sha256(
-                target.read_bytes()
-            ).hexdigest()
+            current_hash = hashlib.sha256(target.read_bytes()).hexdigest()
             if current_hash != metadata.source_hash:
                 console.print(
                     "[yellow]Warning:[/yellow] Source file has changed since "
@@ -223,6 +218,10 @@ def index(
         console.print(f"[green]Wrote[/green] {output_path}")
 
 
+concept_app = typer.Typer(help="Concept management commands.")
+app.add_typer(concept_app, name="concept")
+
+
 @app.command()
 def concepts(
     topic: Annotated[
@@ -231,7 +230,152 @@ def concepts(
     ] = None,
 ) -> None:
     """List or search concept files."""
-    _stub("concepts")
+    from rich.table import Table
+
+    from lexibrarian.wiki.index import ConceptIndex
+
+    project_root = _require_project_root()
+    concepts_dir = project_root / ".lexibrary" / "concepts"
+    index = ConceptIndex.load(concepts_dir)
+
+    if len(index) == 0:
+        console.print(
+            "[yellow]No concepts found.[/yellow] "
+            "Run [cyan]lexi concept new <name>[/cyan] to create one."
+        )
+        return
+
+    if topic:
+        results = index.search(topic)
+        if not results:
+            console.print(f"[yellow]No concepts matching[/yellow] '{topic}'")
+            return
+        title = f"Concepts matching '{topic}'"
+    else:
+        results = [c for name in index.names() if (c := index.find(name)) is not None]
+        title = "All concepts"
+
+    table = Table(title=title)
+    table.add_column("Name", style="cyan")
+    table.add_column("Status")
+    table.add_column("Tags")
+    table.add_column("Summary", max_width=50)
+
+    for concept in results:
+        fm = concept.frontmatter
+        status_style = {
+            "active": "green",
+            "draft": "yellow",
+            "deprecated": "red",
+        }.get(fm.status, "dim")
+        table.add_row(
+            fm.title,
+            f"[{status_style}]{fm.status}[/{status_style}]",
+            ", ".join(fm.tags) if fm.tags else "",
+            concept.summary[:50] if concept.summary else "",
+        )
+
+    console.print(table)
+
+
+@concept_app.command("new")
+def concept_new(
+    name: Annotated[
+        str,
+        typer.Argument(help="Name for the new concept."),
+    ],
+    *,
+    tag: Annotated[
+        list[str] | None,
+        typer.Option("--tag", help="Tag to add to the concept (repeatable)."),
+    ] = None,
+) -> None:
+    """Create a new concept file from template."""
+    from lexibrarian.wiki.template import concept_file_path, render_concept_template
+
+    project_root = _require_project_root()
+    concepts_dir = project_root / ".lexibrary" / "concepts"
+    concepts_dir.mkdir(parents=True, exist_ok=True)
+
+    target = concept_file_path(name, concepts_dir)
+
+    if target.exists():
+        console.print(f"[red]Concept file already exists:[/red] {target.relative_to(project_root)}")
+        raise typer.Exit(1)
+
+    content = render_concept_template(name, tags=tag)
+    target.write_text(content, encoding="utf-8")
+
+    console.print(f"[green]Created[/green] {target.relative_to(project_root)}")
+
+
+@concept_app.command("link")
+def concept_link(
+    concept_name: Annotated[
+        str,
+        typer.Argument(help="Concept name to link."),
+    ],
+    source_file: Annotated[
+        Path,
+        typer.Argument(help="Source file whose design file should receive the wikilink."),
+    ],
+) -> None:
+    """Add a wikilink to a source file's design file."""
+    from lexibrarian.artifacts.design_file_parser import parse_design_file
+    from lexibrarian.artifacts.design_file_serializer import serialize_design_file
+    from lexibrarian.utils.paths import mirror_path
+    from lexibrarian.wiki.index import ConceptIndex
+
+    project_root = _require_project_root()
+
+    # Verify concept exists
+    concepts_dir = project_root / ".lexibrary" / "concepts"
+    index = ConceptIndex.load(concepts_dir)
+    if concept_name not in index:
+        console.print(
+            f"[red]Concept not found:[/red] '{concept_name}'\n"
+            "Available concepts: " + ", ".join(index.names())
+            if index.names()
+            else f"[red]Concept not found:[/red] '{concept_name}'\n"
+            "No concepts exist yet. Run [cyan]lexi concept new <name>[/cyan] first."
+        )
+        raise typer.Exit(1)
+
+    # Find design file
+    target = Path(source_file).resolve()
+    if not target.exists():
+        console.print(f"[red]Source file not found:[/red] {source_file}")
+        raise typer.Exit(1)
+
+    design_path = mirror_path(project_root, target)
+    if not design_path.exists():
+        console.print(
+            f"[yellow]No design file found for[/yellow] {source_file}\n"
+            f"Run [cyan]lexi update {source_file}[/cyan] to generate one first."
+        )
+        raise typer.Exit(1)
+
+    # Parse, add wikilink, re-serialize
+    design = parse_design_file(design_path)
+    if design is None:
+        console.print(f"[red]Failed to parse design file:[/red] {design_path}")
+        raise typer.Exit(1)
+
+    # Check if already linked
+    if concept_name in design.wikilinks:
+        console.print(
+            f"[yellow]Already linked:[/yellow] '{concept_name}' "
+            f"in {design_path.relative_to(project_root)}"
+        )
+        return
+
+    design.wikilinks.append(concept_name)
+    serialized = serialize_design_file(design)
+    design_path.write_text(serialized, encoding="utf-8")
+
+    console.print(
+        f"[green]Linked[/green] [[{concept_name}]] to {design_path.relative_to(project_root)}"
+    )
 
 
 @app.command()
@@ -319,8 +463,7 @@ def update(
             target.relative_to(project_root)
         except ValueError:
             console.print(
-                f"[red]Path is outside the project root:[/red] {path}\n"
-                f"Project root: {project_root}"
+                f"[red]Path is outside the project root:[/red] {path}\nProject root: {project_root}"
             )
             raise typer.Exit(1) from None
 
@@ -331,9 +474,7 @@ def update(
             if result.failed:
                 console.print(f"[red]Failed[/red] to update design file for {path}")
                 raise typer.Exit(1)
-            console.print(
-                f"[green]Done.[/green] Change level: {result.change.value}"
-            )
+            console.print(f"[green]Done.[/green] Change level: {result.change.value}")
             return
 
         # Directory update -- update all files in subtree
@@ -381,9 +522,7 @@ def update(
     if stats.aindex_refreshed:
         console.print(f"  .aindex refreshed:   {stats.aindex_refreshed}")
     if stats.token_budget_warnings:
-        console.print(
-            f"  [yellow]Token budget warnings: {stats.token_budget_warnings}[/yellow]"
-        )
+        console.print(f"  [yellow]Token budget warnings: {stats.token_budget_warnings}[/yellow]")
 
     if stats.files_failed:
         raise typer.Exit(1)
@@ -448,9 +587,7 @@ def describe(
     serialized = serialize_aindex(aindex)
     aindex_file.write_text(serialized, encoding="utf-8")
 
-    console.print(
-        f"[green]Updated[/green] billboard for [cyan]{directory}[/cyan]"
-    )
+    console.print(f"[green]Updated[/green] billboard for [cyan]{directory}[/cyan]")
 
 
 @app.command()

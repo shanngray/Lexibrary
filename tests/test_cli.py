@@ -8,10 +8,11 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import yaml
 from typer.testing import CliRunner
 
 from lexibrarian.archivist.change_checker import ChangeLevel
-from lexibrarian.archivist.pipeline import UpdateStats, FileResult
+from lexibrarian.archivist.pipeline import FileResult, UpdateStats
 from lexibrarian.cli import app
 
 runner = CliRunner()
@@ -21,14 +22,26 @@ runner = CliRunner()
 # Help
 # ---------------------------------------------------------------------------
 
+
 class TestHelp:
     def test_help_lists_all_commands(self) -> None:
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
         for cmd in (
-            "init", "lookup", "index", "concepts", "guardrails",
-            "search", "update", "validate", "status", "setup", "daemon",
-            "guardrail", "describe",
+            "init",
+            "lookup",
+            "index",
+            "concepts",
+            "guardrails",
+            "search",
+            "update",
+            "validate",
+            "status",
+            "setup",
+            "daemon",
+            "guardrail",
+            "concept",
+            "describe",
         ):
             assert cmd in result.output
 
@@ -41,9 +54,11 @@ class TestHelp:
 # Init
 # ---------------------------------------------------------------------------
 
+
 class TestInit:
     def test_init_creates_skeleton(self, tmp_path: Path, monkeypatch: object) -> None:
         import pytest  # noqa: F811
+
         monkeypatch_ = pytest.MonkeyPatch()  # type: ignore[attr-defined]
         monkeypatch_.chdir(tmp_path)
         result = runner.invoke(app, ["init"])
@@ -95,6 +110,7 @@ class TestInit:
 # ---------------------------------------------------------------------------
 # Index command
 # ---------------------------------------------------------------------------
+
 
 def _setup_project(tmp_path: Path) -> Path:
     """Create a minimal initialized project at tmp_path with some source files."""
@@ -192,6 +208,7 @@ class TestIndexCommand:
 # Stub commands — should exit 0 with "Not yet implemented" when .lexibrary/ exists
 # ---------------------------------------------------------------------------
 
+
 class TestStubCommands:
     """All non-init commands should print stub and exit 0 with project root."""
 
@@ -203,11 +220,6 @@ class TestStubCommands:
             return runner.invoke(app, args)
         finally:
             os.chdir(old_cwd)
-
-    def test_concepts_stub(self, tmp_path: Path) -> None:
-        result = self._invoke_in_project(tmp_path, ["concepts"])
-        assert result.exit_code == 0  # type: ignore[union-attr]
-        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
 
     def test_guardrails_stub(self, tmp_path: Path) -> None:
         result = self._invoke_in_project(tmp_path, ["guardrails"])
@@ -244,6 +256,7 @@ class TestStubCommands:
 # Commands without .lexibrary/ should exit 1 with friendly error
 # ---------------------------------------------------------------------------
 
+
 class TestNoProjectRoot:
     def _invoke_without_project(self, tmp_path: Path, args: list[str]) -> object:
         old_cwd = os.getcwd()
@@ -272,6 +285,7 @@ class TestNoProjectRoot:
 # ---------------------------------------------------------------------------
 # Helpers for archivist CLI tests
 # ---------------------------------------------------------------------------
+
 
 def _setup_archivist_project(tmp_path: Path) -> Path:
     """Create a minimal project with .lexibrary and source files."""
@@ -346,7 +360,8 @@ def _create_aindex(tmp_path: Path, directory_rel: str, billboard: str) -> Path:
 
 (none)
 
-<!-- lexibrarian:meta source="{directory_rel}" source_hash="abc123" generated="{now}" generator="lexibrarian-v2" -->
+<!-- lexibrarian:meta source="{directory_rel}" source_hash="abc123" """
+    content += f"""generated="{now}" generator="lexibrarian-v2" -->
 """
     aindex_path.write_text(content, encoding="utf-8")
     return aindex_path
@@ -355,6 +370,7 @@ def _create_aindex(tmp_path: Path, directory_rel: str, billboard: str) -> Path:
 # ---------------------------------------------------------------------------
 # Update command tests
 # ---------------------------------------------------------------------------
+
 
 class TestUpdateCommand:
     """Tests for the `lexi update` command."""
@@ -370,7 +386,8 @@ class TestUpdateCommand:
         os.chdir(project)
         try:
             with patch(
-                "lexibrarian.archivist.pipeline.update_file", mock_update_file,
+                "lexibrarian.archivist.pipeline.update_file",
+                mock_update_file,
             ):
                 result = runner.invoke(app, ["update", "src/main.py"])
         finally:
@@ -396,7 +413,8 @@ class TestUpdateCommand:
         os.chdir(project)
         try:
             with patch(
-                "lexibrarian.archivist.pipeline.update_project", mock_update_project,
+                "lexibrarian.archivist.pipeline.update_project",
+                mock_update_project,
             ):
                 result = runner.invoke(app, ["update", "src"])
         finally:
@@ -412,9 +430,7 @@ class TestUpdateCommand:
 
         mock_stats = UpdateStats(files_scanned=3, files_unchanged=3)
         mock_update_project = AsyncMock(return_value=mock_stats)
-        mock_start_here = AsyncMock(
-            return_value=project / ".lexibrary" / "START_HERE.md"
-        )
+        mock_start_here = AsyncMock(return_value=project / ".lexibrary" / "START_HERE.md")
 
         old_cwd = os.getcwd()
         os.chdir(project)
@@ -460,7 +476,8 @@ class TestUpdateCommand:
         os.chdir(project)
         try:
             with patch(
-                "lexibrarian.archivist.pipeline.update_file", mock_update_file,
+                "lexibrarian.archivist.pipeline.update_file",
+                mock_update_file,
             ):
                 result = runner.invoke(app, ["update", "src/main.py"])
         finally:
@@ -473,6 +490,7 @@ class TestUpdateCommand:
 # ---------------------------------------------------------------------------
 # Lookup command tests
 # ---------------------------------------------------------------------------
+
 
 class TestLookupCommand:
     """Tests for the `lexi lookup` command."""
@@ -553,6 +571,7 @@ class TestLookupCommand:
 # Describe command tests
 # ---------------------------------------------------------------------------
 
+
 class TestDescribeCommand:
     """Tests for the `lexi describe` command."""
 
@@ -574,9 +593,7 @@ class TestDescribeCommand:
         assert "Updated" in result.output
 
         # Verify the .aindex was actually updated
-        aindex_content = (
-            project / ".lexibrary" / "src" / ".aindex"
-        ).read_text(encoding="utf-8")
+        aindex_content = (project / ".lexibrary" / "src" / ".aindex").read_text(encoding="utf-8")
         assert "Authentication and authorization services" in aindex_content
 
     def test_describe_missing_aindex(self, tmp_path: Path) -> None:
@@ -621,3 +638,251 @@ class TestDescribeCommand:
 
         assert result.exit_code == 1
         assert "No .lexibrary/" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Helper for concept tests
+# ---------------------------------------------------------------------------
+
+
+def _create_concept_file(
+    tmp_path: Path,
+    name: str,
+    *,
+    tags: list[str] | None = None,
+    status: str = "active",
+    aliases: list[str] | None = None,
+    summary: str = "",
+) -> Path:
+    """Create a concept markdown file in .lexibrary/concepts/."""
+    import re  # noqa: PLC0415
+
+    concepts_dir = tmp_path / ".lexibrary" / "concepts"
+    concepts_dir.mkdir(parents=True, exist_ok=True)
+
+    resolved_tags = tags or []
+    resolved_aliases = aliases or []
+
+    fm_data: dict[str, object] = {
+        "title": name,
+        "aliases": resolved_aliases,
+        "tags": resolved_tags,
+        "status": status,
+    }
+    fm_str = yaml.dump(fm_data, default_flow_style=False, sort_keys=False).rstrip("\n")
+
+    # PascalCase filename
+    words = re.split(r"[^a-zA-Z0-9]+", name)
+    pascal = "".join(w.capitalize() for w in words if w)
+    file_path = concepts_dir / f"{pascal}.md"
+
+    body = f"---\n{fm_str}\n---\n\n{summary}\n\n## Details\n\n## Decision Log\n\n## Related\n"
+    file_path.write_text(body, encoding="utf-8")
+    return file_path
+
+
+# ---------------------------------------------------------------------------
+# Concepts command tests
+# ---------------------------------------------------------------------------
+
+
+class TestConceptsCommand:
+    """Tests for the `lexi concepts` command."""
+
+    def _invoke(self, tmp_path: Path, args: list[str]) -> object:
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return runner.invoke(app, args)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_concepts_empty(self, tmp_path: Path) -> None:
+        """Show message when no concepts exist."""
+        _setup_project(tmp_path)
+        result = self._invoke(tmp_path, ["concepts"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "No concepts found" in result.output  # type: ignore[union-attr]
+
+    def test_concepts_list_all(self, tmp_path: Path) -> None:
+        """List all concepts in a Rich table."""
+        _setup_project(tmp_path)
+        _create_concept_file(tmp_path, "Authentication", tags=["security"])
+        _create_concept_file(tmp_path, "Rate Limiting", tags=["performance"])
+
+        result = self._invoke(tmp_path, ["concepts"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Authentication" in result.output  # type: ignore[union-attr]
+        assert "Rate Limiting" in result.output  # type: ignore[union-attr]
+
+    def test_concepts_search(self, tmp_path: Path) -> None:
+        """Search concepts by topic."""
+        _setup_project(tmp_path)
+        _create_concept_file(tmp_path, "Authentication", tags=["security"])
+        _create_concept_file(tmp_path, "Rate Limiting", tags=["performance"])
+
+        result = self._invoke(tmp_path, ["concepts", "auth"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Authentication" in result.output  # type: ignore[union-attr]
+        assert "Rate Limiting" not in result.output  # type: ignore[union-attr]
+
+    def test_concepts_search_no_match(self, tmp_path: Path) -> None:
+        """Search with no matches shows message."""
+        _setup_project(tmp_path)
+        _create_concept_file(tmp_path, "Authentication", tags=["security"])
+
+        result = self._invoke(tmp_path, ["concepts", "zzzzz"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "No concepts matching" in result.output  # type: ignore[union-attr]
+
+    def test_concepts_no_project(self, tmp_path: Path) -> None:
+        """Concepts without .lexibrary should fail."""
+        result = self._invoke(tmp_path, ["concepts"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "No .lexibrary/" in result.output  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# Concept new command tests
+# ---------------------------------------------------------------------------
+
+
+class TestConceptNewCommand:
+    """Tests for the `lexi concept new` command."""
+
+    def _invoke(self, tmp_path: Path, args: list[str]) -> object:
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return runner.invoke(app, args)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_create_concept(self, tmp_path: Path) -> None:
+        """Create a new concept file."""
+        _setup_project(tmp_path)
+        (tmp_path / ".lexibrary" / "concepts").mkdir(parents=True, exist_ok=True)
+
+        result = self._invoke(tmp_path, ["concept", "new", "Rate Limiting"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Created" in result.output  # type: ignore[union-attr]
+        assert (tmp_path / ".lexibrary" / "concepts" / "RateLimiting.md").exists()
+
+    def test_create_concept_with_tags(self, tmp_path: Path) -> None:
+        """Create a concept with tags."""
+        _setup_project(tmp_path)
+        (tmp_path / ".lexibrary" / "concepts").mkdir(parents=True, exist_ok=True)
+
+        result = self._invoke(
+            tmp_path, ["concept", "new", "Auth", "--tag", "security", "--tag", "core"]
+        )
+        assert result.exit_code == 0  # type: ignore[union-attr]
+
+        content = (tmp_path / ".lexibrary" / "concepts" / "Auth.md").read_text()
+        assert "security" in content
+        assert "core" in content
+
+    def test_create_concept_already_exists(self, tmp_path: Path) -> None:
+        """Refuse to overwrite existing concept file."""
+        _setup_project(tmp_path)
+        _create_concept_file(tmp_path, "Authentication")
+
+        result = self._invoke(tmp_path, ["concept", "new", "Authentication"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "already exists" in result.output  # type: ignore[union-attr]
+
+    def test_create_concept_no_project(self, tmp_path: Path) -> None:
+        """Concept new without .lexibrary should fail."""
+        result = self._invoke(tmp_path, ["concept", "new", "Test"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "No .lexibrary/" in result.output  # type: ignore[union-attr]
+
+    def test_create_concept_pascalcase(self, tmp_path: Path) -> None:
+        """Concept name with spaces gets PascalCase filename."""
+        _setup_project(tmp_path)
+        (tmp_path / ".lexibrary" / "concepts").mkdir(parents=True, exist_ok=True)
+
+        result = self._invoke(tmp_path, ["concept", "new", "my cool concept"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert (tmp_path / ".lexibrary" / "concepts" / "MyCoolConcept.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# Concept link command tests
+# ---------------------------------------------------------------------------
+
+
+class TestConceptLinkCommand:
+    """Tests for the `lexi concept link` command."""
+
+    def _invoke(self, tmp_path: Path, args: list[str]) -> object:
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return runner.invoke(app, args)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_link_concept(self, tmp_path: Path) -> None:
+        """Link a concept to a source file's design file."""
+        project = _setup_archivist_project(tmp_path)
+        _create_concept_file(project, "Authentication")
+        source_content = "def hello():\n    pass\n"
+        _create_design_file(project, "src/main.py", source_content)
+
+        result = self._invoke(project, ["concept", "link", "Authentication", "src/main.py"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Linked" in result.output  # type: ignore[union-attr]
+
+        # Verify wikilink was added to design file
+        design_content = (project / ".lexibrary" / "src" / "main.py.md").read_text(encoding="utf-8")
+        assert "[[Authentication]]" in design_content
+
+    def test_link_concept_already_linked(self, tmp_path: Path) -> None:
+        """Linking an already-linked concept shows message."""
+        project = _setup_archivist_project(tmp_path)
+        _create_concept_file(project, "Authentication")
+        source_content = "def hello():\n    pass\n"
+        _create_design_file(project, "src/main.py", source_content)
+
+        # Link once
+        self._invoke(project, ["concept", "link", "Authentication", "src/main.py"])
+        # Link again
+        result = self._invoke(project, ["concept", "link", "Authentication", "src/main.py"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "Already linked" in result.output  # type: ignore[union-attr]
+
+    def test_link_concept_not_found(self, tmp_path: Path) -> None:
+        """Linking a nonexistent concept should fail."""
+        project = _setup_archivist_project(tmp_path)
+        source_content = "def hello():\n    pass\n"
+        _create_design_file(project, "src/main.py", source_content)
+
+        result = self._invoke(project, ["concept", "link", "Nonexistent", "src/main.py"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "Concept not found" in result.output  # type: ignore[union-attr]
+
+    def test_link_source_not_found(self, tmp_path: Path) -> None:
+        """Linking to a nonexistent source file should fail."""
+        project = _setup_archivist_project(tmp_path)
+        _create_concept_file(project, "Authentication")
+
+        result = self._invoke(project, ["concept", "link", "Authentication", "src/missing.py"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "Source file not found" in result.output  # type: ignore[union-attr]
+
+    def test_link_no_design_file(self, tmp_path: Path) -> None:
+        """Linking when no design file exists should suggest running update."""
+        project = _setup_archivist_project(tmp_path)
+        _create_concept_file(project, "Authentication")
+
+        result = self._invoke(project, ["concept", "link", "Authentication", "src/main.py"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "No design file found" in result.output  # type: ignore[union-attr]
+        assert "lexi update" in result.output  # type: ignore[union-attr]
+
+    def test_link_no_project(self, tmp_path: Path) -> None:
+        """Concept link without .lexibrary should fail."""
+        result = self._invoke(tmp_path, ["concept", "link", "Test", "file.py"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "No .lexibrary/" in result.output  # type: ignore[union-attr]

@@ -228,6 +228,7 @@ class TestGenerateDesignFile:
             interface_skeleton="def login(): ...",
             language="python",
             existing_design_file=None,
+            available_concepts=None,
         )
 
     @pytest.mark.asyncio()
@@ -280,6 +281,7 @@ class TestGenerateDesignFile:
             interface_skeleton=None,
             language=None,
             existing_design_file=None,
+            available_concepts=None,
         )
 
 
@@ -456,3 +458,111 @@ class TestClientRouting:
             result = service._get_baml_client()
             mock_b.with_options.assert_not_called()
             assert result is mock_b
+
+
+# ---------------------------------------------------------------------------
+# DesignFileRequest — available_concepts field
+# ---------------------------------------------------------------------------
+
+
+class TestDesignFileRequestAvailableConcepts:
+    """Verify available_concepts field on DesignFileRequest."""
+
+    def test_defaults_to_none(self) -> None:
+        req = DesignFileRequest(
+            source_path="src/foo.py",
+            source_content="class Foo: pass",
+        )
+        assert req.available_concepts is None
+
+    def test_accepts_concept_list(self) -> None:
+        concepts = ["Authentication", "Rate Limiting", "Caching"]
+        req = DesignFileRequest(
+            source_path="src/foo.py",
+            source_content="class Foo: pass",
+            available_concepts=concepts,
+        )
+        assert req.available_concepts == concepts
+
+    def test_accepts_empty_list(self) -> None:
+        req = DesignFileRequest(
+            source_path="src/foo.py",
+            source_content="class Foo: pass",
+            available_concepts=[],
+        )
+        assert req.available_concepts == []
+
+
+# ---------------------------------------------------------------------------
+# ArchivistService — available_concepts passed to BAML
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateDesignFileWithConcepts:
+    """Verify available_concepts is forwarded to the BAML call."""
+
+    @pytest.mark.asyncio()
+    async def test_concepts_passed_to_baml(
+        self,
+        rate_limiter: RateLimiter,
+        anthropic_config: LLMConfig,
+        sample_design_file_output: DesignFileOutput,
+    ) -> None:
+        service = ArchivistService(rate_limiter=rate_limiter, config=anthropic_config)
+
+        concepts = ["Authentication", "Session Management"]
+        request = DesignFileRequest(
+            source_path="src/auth.py",
+            source_content="def login(): ...",
+            available_concepts=concepts,
+        )
+
+        mock_client = MagicMock()
+        mock_client.ArchivistGenerateDesignFile = AsyncMock(
+            return_value=sample_design_file_output
+        )
+
+        with patch.object(service, "_get_baml_client", return_value=mock_client):
+            result = await service.generate_design_file(request)
+
+        assert result.error is False
+        mock_client.ArchivistGenerateDesignFile.assert_awaited_once_with(
+            source_path="src/auth.py",
+            source_content="def login(): ...",
+            interface_skeleton=None,
+            language=None,
+            existing_design_file=None,
+            available_concepts=concepts,
+        )
+
+    @pytest.mark.asyncio()
+    async def test_none_concepts_passed_to_baml(
+        self,
+        rate_limiter: RateLimiter,
+        anthropic_config: LLMConfig,
+        sample_design_file_output: DesignFileOutput,
+    ) -> None:
+        service = ArchivistService(rate_limiter=rate_limiter, config=anthropic_config)
+
+        request = DesignFileRequest(
+            source_path="src/auth.py",
+            source_content="def login(): ...",
+        )
+
+        mock_client = MagicMock()
+        mock_client.ArchivistGenerateDesignFile = AsyncMock(
+            return_value=sample_design_file_output
+        )
+
+        with patch.object(service, "_get_baml_client", return_value=mock_client):
+            result = await service.generate_design_file(request)
+
+        assert result.error is False
+        mock_client.ArchivistGenerateDesignFile.assert_awaited_once_with(
+            source_path="src/auth.py",
+            source_content="def login(): ...",
+            interface_skeleton=None,
+            language=None,
+            existing_design_file=None,
+            available_concepts=None,
+        )

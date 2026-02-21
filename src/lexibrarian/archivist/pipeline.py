@@ -34,6 +34,7 @@ from lexibrarian.config.schema import LexibraryConfig
 from lexibrarian.ignore import create_ignore_matcher
 from lexibrarian.utils.languages import detect_language
 from lexibrarian.utils.paths import LEXIBRARY_DIR, aindex_path, mirror_path
+from lexibrarian.wiki.index import ConceptIndex
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,9 @@ class FileResult:
 
 
 def _is_within_scope(
-    source_path: Path, project_root: Path, scope_root: str,
+    source_path: Path,
+    project_root: Path,
+    scope_root: str,
 ) -> bool:
     """Check whether *source_path* is under the configured scope_root."""
     scope_abs = (project_root / scope_root).resolve()
@@ -189,6 +192,7 @@ async def update_file(
     project_root: Path,
     config: LexibraryConfig,
     archivist: ArchivistService,
+    available_concepts: list[str] | None = None,
 ) -> FileResult:
     """Generate or update the design file for a single source file.
 
@@ -220,7 +224,9 @@ async def update_file(
         frontmatter = parse_design_file_frontmatter(design_path)
         if frontmatter is not None and frontmatter.description.strip():
             aindex_refreshed = _refresh_parent_aindex(
-                source_path, project_root, frontmatter.description.strip(),
+                source_path,
+                project_root,
+                frontmatter.description.strip(),
             )
         return FileResult(change=change, aindex_refreshed=aindex_refreshed)
 
@@ -252,6 +258,7 @@ async def update_file(
         interface_skeleton=skeleton_text,
         language=language,
         existing_design_file=existing_design,
+        available_concepts=available_concepts,
     )
 
     result = await archivist.generate_design_file(request)
@@ -339,6 +346,11 @@ async def update_project(
     binary_exts = set(config.crawl.binary_extensions)
     scope_abs = (project_root / config.scope_root).resolve()
 
+    # Load available concept names for wikilink guidance
+    concepts_dir = project_root / LEXIBRARY_DIR / "concepts"
+    concept_index = ConceptIndex.load(concepts_dir)
+    available_concepts = concept_index.names() or None
+
     # Discover all source files within scope
     source_files: list[Path] = []
     for path in sorted(scope_abs.rglob("*")):
@@ -378,7 +390,13 @@ async def update_project(
         stats.files_scanned += 1
 
         try:
-            file_result = await update_file(source_path, project_root, config, archivist)
+            file_result = await update_file(
+                source_path,
+                project_root,
+                config,
+                archivist,
+                available_concepts=available_concepts,
+            )
         except Exception:
             logger.exception("Unexpected error processing %s", source_path)
             stats.files_failed += 1

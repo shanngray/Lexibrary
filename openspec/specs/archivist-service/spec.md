@@ -11,6 +11,8 @@ The system SHALL provide an `ArchivistService` class in `src/lexibrarian/archivi
 
 The service SHALL be stateless (safe for future concurrent use).
 
+When `request.available_concepts` is not None, the service SHALL pass the concept names to the BAML function call as the `available_concepts` parameter.
+
 #### Scenario: Generate design file with rate limiting
 - **WHEN** `generate_design_file()` is called
 - **THEN** it SHALL respect the rate limiter before making the BAML call
@@ -19,6 +21,14 @@ The service SHALL be stateless (safe for future concurrent use).
 - **WHEN** the BAML call fails (network error, API error, etc.)
 - **THEN** `generate_design_file()` SHALL return a `DesignFileResult` with `error=True` and `error_message` populated
 
+#### Scenario: Concepts passed to BAML
+- **WHEN** `generate_design_file()` is called with `request.available_concepts=["JWT Auth"]`
+- **THEN** the BAML function SHALL receive `available_concepts=["JWT Auth"]`
+
+#### Scenario: No concepts passed when None
+- **WHEN** `generate_design_file()` is called with `request.available_concepts=None`
+- **THEN** the BAML function SHALL receive `available_concepts=None` (or omit the parameter)
+
 ### Requirement: DesignFileRequest data class
 The system SHALL provide a `DesignFileRequest` dataclass with fields:
 - `source_path` (str)
@@ -26,6 +36,7 @@ The system SHALL provide a `DesignFileRequest` dataclass with fields:
 - `interface_skeleton` (str | None)
 - `language` (str | None)
 - `existing_design_file` (str | None)
+- `available_concepts` (list[str] | None) — optional list of known concept names for wikilink suggestions, default None
 
 #### Scenario: Request for code file
 - **WHEN** a DesignFileRequest is created for a Python file
@@ -34,6 +45,14 @@ The system SHALL provide a `DesignFileRequest` dataclass with fields:
 #### Scenario: Request for non-code file
 - **WHEN** a DesignFileRequest is created for a YAML file
 - **THEN** `interface_skeleton` and `language` SHALL be None
+
+#### Scenario: Request with available concepts
+- **WHEN** a DesignFileRequest is created with `available_concepts=["JWT Auth", "Rate Limiting"]`
+- **THEN** `available_concepts` SHALL be stored as the provided list
+
+#### Scenario: Request without available concepts
+- **WHEN** a DesignFileRequest is created without `available_concepts`
+- **THEN** `available_concepts` SHALL default to None
 
 ### Requirement: DesignFileResult data class
 The system SHALL provide a `DesignFileResult` dataclass with fields:

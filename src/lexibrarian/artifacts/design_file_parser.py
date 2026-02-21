@@ -154,6 +154,17 @@ def parse_design_file(path: Path) -> DesignFile | None:
                 result.append(stripped[2:])
         return result
 
+    def _wikilink_list(name: str) -> list[str]:
+        """Parse a bullet list of wikilinks, stripping [[]] brackets if present."""
+        result: list[str] = []
+        for item in _bullet_list(name):
+            # Strip [[]] brackets for both bracketed and unbracketed formats
+            if item.startswith("[[") and item.endswith("]]"):
+                result.append(item[2:-2])
+            else:
+                result.append(item)
+        return result
+
     # --- Interface Contract (strip fenced code block delimiters) ---
     contract_lines = _section_lines("Interface Contract")
     # Remove opening ``` line and closing ``` line
@@ -172,7 +183,7 @@ def parse_design_file(path: Path) -> DesignFile | None:
     # --- Optional sections ---
     tests = _section_text("Tests") or None
     complexity_warning = _section_text("Complexity Warning") or None
-    wikilinks = _bullet_list("Wikilinks")
+    wikilinks = _wikilink_list("Wikilinks")
     tags = _bullet_list("Tags")
     guardrail_refs = _bullet_list("Guardrails")
 

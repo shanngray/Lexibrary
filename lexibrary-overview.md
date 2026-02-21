@@ -54,7 +54,7 @@ A separate, standalone file that acts as a **post-it note passed from one agent 
 
 **Key rules:**
 
-1. **Overwrite, never append** — each agent session writes a fresh `HANDOFF.md`. No history accumulates. If history matters, it belongs in a guardrail thread or a commit message.
+1. **Overwrite, never append** — each agent session writes a fresh `HANDOFF.md`. No history accumulates. If history matters, it belongs in a Stack post or a commit message.
 2. **Mandatory read/write** — agent environment rules (Section 8) enforce: read `HANDOFF.md` at session start, rewrite it before session end.
 3. **Token-budgeted** — `lexi validate` flags it if it exceeds its target size, same as any other artifact.
 
@@ -118,7 +118,7 @@ The `description` field is the canonical short description — it propagates to 
 - **Complexity Warning** — flagged note if the file contains legacy code or dragons.
 - **Wikilinks** — `[[ConceptName]]` tags linking to relevant concepts, conventions, or decisions.
 - **Tags** — lightweight labels for search and filtering (e.g., `auth`, `security`, `jwt`). Complements wikilinks — tags enable `lexi search --tag auth` without requiring graph traversal.
-- **Guardrails** — cross-references to relevant guardrail threads.
+- **Stack** — cross-references to relevant Stack posts (`[[ST-NNN]]`).
 
 **HTML comment footer** (machine-managed):
 ```html
@@ -172,7 +172,7 @@ The `.aindex` is the right home because agents already read it when entering a d
 
 **Inheritance:** Local Conventions sections inherit downward. If `.lexibrary/src/.aindex` says "use UTC everywhere" and `.lexibrary/src/payments/.aindex` says "use Decimal for money," an agent in `src/payments/` sees both — it sees its current `.aindex` plus any parent `.aindex` Local Conventions sections it traversed to get there. This matches the existing navigation model. NOTE: If the agent has jumped to a subdirectory rather than traversing the directory tree, it will only see the Local Conventions for the current directory, not the parent directories.
 
-**Population:** Local Conventions are initially empty. They are intended to be populated by agents (via a future CLI command or guardrail-like workflow) or by humans editing `.aindex` files directly. **Open question:** How should `lexi update` preserve agent/human-authored Local Conventions when regenerating the `.aindex` file? The convention content must survive regeneration — either by parsing and re-injecting it, or by treating Local Conventions as a separate section that regeneration never touches.
+**Population:** Local Conventions are initially empty. They are intended to be populated by agents (via a future CLI command or Stack-like workflow) or by humans editing `.aindex` files directly. **Open question:** How should `lexi update` preserve agent/human-authored Local Conventions when regenerating the `.aindex` file? The convention content must survive regeneration — either by parsing and re-injecting it, or by treating Local Conventions as a separate section that regeneration never touches.
 
 **Agent workflow:**
 
@@ -185,24 +185,81 @@ The agent finds specific logic without ever loading irrelevant frontend code or 
 
 ---
 
-## 4. Knowledge Graph: Wikilinks
+## 4. Concepts Wiki: Wikilinks
 
-**Purpose:** Link disconnected concepts that live in different files, directories, or even repos.
+**Purpose:** A living wiki of cross-cutting concepts that agents maintain alongside code. Links disconnected knowledge that lives in different files, directories, or even repos.
 
-Implementation is **wikilinks in markdown** — no graph database, no infrastructure. `[[Authentication]]` in a design file tells the agent there's a concept file to follow if it needs more context.
+Implementation is **wikilinks in markdown** — no graph database, no infrastructure. `[[Authentication]]` in a design file tells the agent there's a concept file to follow if it needs more context. Agents are the primary authors — they create and update concepts during normal development. The wiki grows organically with the codebase.
 
 ### Concept files
 
-A `concepts/` directory containing one file per cross-cutting concept:
+A flat `concepts/` directory containing one file per cross-cutting concept. No subdirectories — hierarchy is expressed through wikilinks between concepts, not filesystem structure. `[[ConceptName]]` always resolves to `concepts/ConceptName.md`.
 
 ```
-.lexibrary/concepts/Authentication.md
-  - Frontend Login Form → .lexibrary/frontend/components/LoginForm.tsx.md
-  - Backend Auth Middleware → .lexibrary/backend/middleware/auth.py.md
-  - DB User Table → .lexibrary/db/migrations/users.sql.md
+.lexibrary/concepts/
+  Authentication.md
+  JWTTokens.md
+  SessionManagement.md
+  MoneyHandling.md
+  RepositoryPattern.md
 ```
 
-Concept files also include **tags** for searchability (e.g., `auth`, `security`, `cross-cutting`) and a **decision log** section for recording key architectural choices related to the concept.
+### Concept file format
+
+Concept files have **mandatory YAML frontmatter** and a freeform markdown body:
+
+```yaml
+---
+title: Money Handling
+aliases: [currency, monetary values, pricing]
+tags: [domain, finance, data-integrity]
+status: active
+---
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | yes | Human-readable concept name |
+| `aliases` | list[string] | yes (min 1) | Alternative names for discovery. Agents think in different terms — "currency", "money", "pricing" should all find this concept. |
+| `tags` | list[string] | yes (min 1) | Lowercase labels for `lexi search --tag` |
+| `status` | enum | yes | `active`, `deprecated`, or `draft` |
+| `superseded_by` | string | no | Concept that replaces this one (when deprecated) |
+
+The markdown body contains:
+- **Summary** (required) — 1-3 sentences. What and why.
+- **Rules** — prescriptive guidelines ("Do X, not Y, because Z"). Highest-value section.
+- **Where It Applies** — file/directory scopes.
+- **Related** — wikilinks to other concepts, Stack posts, files.
+- **Decision Log** — append-only record of key decisions.
+
+**Design principle:** Concepts should be **prescriptive, not descriptive**. "Do X, not Y, because Z" is worth 10x more than "X is a pattern where..." Agents need actionable rules.
+
+Unlike design files, concept files have **no metadata footer** — they are fully agent/human authored with no LLM generation to track.
+
+### Concept index
+
+The concept index is accessed via `lexi concepts` — a CLI command, not embedded in `START_HERE.md`. This keeps `START_HERE.md` within its token budget as the concept count grows. The convention index section in `START_HERE.md` remains as a lightweight routing aid for project-level conventions; the full concept catalog is CLI-accessed.
+
+```
+$ lexi concepts
+Authentication     — JWT-based auth with refresh token rotation
+MoneyHandling      — All monetary values use Decimal, never float
+RepositoryPattern  — Data access via repository classes, not direct ORM
+
+$ lexi concepts auth           # fuzzy search by name, alias, tag
+$ lexi concepts --tag security # filter by tag
+```
+
+### Concept lifecycle
+
+- **Creation:** Agents create concepts when they encounter cross-cutting patterns during coding. The trigger: "Would a future agent in a different part of the codebase benefit from knowing this?" If scoped to one directory, it belongs in `.aindex` Local Conventions instead.
+- **Updates:** Agents update concepts when code changes affect the convention. The decision log section is append-only; rules/summary sections reflect current truth.
+- **Deprecation:** `status: deprecated` with `superseded_by` pointer. Concept still resolves but displays a notice.
+- **Deletion:** Manual. `lexi validate` flags orphan concepts (zero inbound references) for review.
+
+### Nested concepts
+
+Related concepts (e.g., `Authentication` → `JWTTokens`, `SessionManagement`, `OAuthFlow`) are separate files linked via wikilinks. One file per concept keeps token budgets manageable and links precise — `[[JWTTokens]]` is more useful than `[[Authentication]]` when only tokens are relevant.
 
 ### Why wikilinks over a graph database?
 
@@ -220,9 +277,11 @@ The hardest problem. Abstractions don't live in files — they span the codebase
 
 The `concepts/` directory entries. When a design file mentions `[[RepositoryPattern]]`, the agent pulls in `concepts/RepositoryPattern.md` which explains the pattern, why it was chosen, the interface contract, and exceptions.
 
-### Tier 2: Convention index (loaded at session start)
+### Tier 2: Convention index + Concept catalog
 
-A compact list in `START_HERE.md` that names every convention with a one-line description. Cheap to load (< 1KB). Tells the agent *what exists*. When it needs detail, it follows the wikilink.
+Two complementary views:
+- **Convention index** in `START_HERE.md` — a compact list naming project conventions with one-line descriptions. Cheap to load (< 1KB). Tells the agent *what exists*. When it needs detail, it follows the wikilink.
+- **Concept catalog** via `lexi concepts` — the full searchable index of all concept files, accessed on demand via CLI. Not embedded in START_HERE (keeps the bootloader within token budget as concept count grows).
 
 ### Tier 3: Decision records / ADRs (loaded on demand)
 
@@ -235,7 +294,7 @@ For "why did we choose X over Y" questions. These are linked from concept files 
 | Always | Session start | `START_HERE.md` + `HANDOFF.md` (topology, conventions, current task) |
 | On directory entry | Agent enters a directory | That directory's `.aindex` (including Local Conventions section) |
 | On file touch | Agent reads/edits a file | That file's design file (includes wikilinks) |
-| On demand | Agent follows a wikilink | Concept files, decision records |
+| On demand | Agent follows a wikilink or runs `lexi concepts` | Concept files, decision records |
 
 This keeps base context tiny but makes full knowledge accessible. The agent environment rules (see section 8) tell agents *when* to pull each tier.
 
@@ -251,80 +310,141 @@ Each artifact type has a target token size. These are configurable in `.lexibrar
 | Design file (abridged) | ~50–100 tokens | Interface-only skeleton for simple files. |
 | `.aindex` file | ~100–200 tokens | Routing tables, not documentation. |
 | Concept file | ~200–400 tokens | Comparable to a design file. Decision logs may push larger. |
-| Guardrail thread | Unbounded (append-only) | Evidence accumulates. Search filters keep retrieval scoped. |
+| Stack post | Unbounded (append-only body) | Evidence and answers accumulate. Search filters keep retrieval scoped. |
 
 The LLM generation step validates output against these targets. If a design file exceeds its budget, the generator flags the source file as potentially over-scoped — a useful architectural signal.
 
 ---
 
-## 6. The Guardrail Forum
+## 6. The Stack
 
-Guardrails are a standalone system — a **mini Stack Overflow embedded in the codebase**. Their purpose is to record real issues that previous agents encountered so new agents know what not to try.
+The Stack is a **Stack Overflow–inspired knowledge base embedded in the codebase**. Agents record problems they've hit, solutions they've found, and approaches that failed — so future agents don't repeat the same mistakes.
 
-### Why a forum, not just a field in design files?
+### Why a dedicated system, not just a field in design files?
 
-- Issues often span multiple files — a guardrail about timezone handling touches `utils/`, `models/`, `api/`, and `tests/`.
-- Guardrails need discussion-like structure: the problem, attempted solutions that failed, the actual fix.
-- Agents need to *search* guardrails across the codebase ("has anyone hit a timezone issue before?"), not just see ones scoped to a single file.
+- Issues often span multiple files — a post about timezone handling touches `utils/`, `models/`, `api/`, and `tests/`.
+- Posts need Q&A structure: the problem, evidence, multiple answers with votes, accepted solutions.
+- Agents need to *search* across the codebase ("has anyone hit a timezone issue before?"), not just see issues scoped to a single file.
 
-### Structure: threads not entries
+### Structure: posts with answers
 
-Each guardrail is a **thread**, structured like a Stack Overflow Q&A:
+Each post is a markdown file in `.lexibrary/stack/`:
 
 ```
-guardrails/
-  GR-001-timezone-naive-datetimes.md
-  GR-002-circular-import-services.md
+stack/
+  ST-001-timezone-naive-datetimes.md
+  ST-002-circular-import-services.md
   ...
 ```
 
-**Thread format:**
+**Post format:**
 
 ```markdown
-# GR-001: Timezone-naive datetimes cause silent data corruption
-
-**Status:** active
-**Scope:** [[DateHandling]], `src/models/event.py`, `src/api/events.py`
-**Reported by:** agent-session-abc123
-**Date:** 2026-01-15
+---
+id: ST-001
+title: "Timezone-naive datetimes cause silent data corruption"
+tags: [datetime, data-integrity, utils]
+status: resolved
+created: 2026-01-15
+author: agent-session-abc123
+bead: null
+votes: 3
+duplicate_of: null
+refs:
+  concepts: [DateHandling]
+  files: [src/models/event.py, src/api/events.py]
+  designs: [src/models/event.py.md]
+---
 
 ## Problem
 Using `datetime.now()` anywhere in this codebase produces timezone-naive
 datetimes that silently corrupt data when compared against the DB (which
 stores UTC).
 
-## Failed approaches
-- Wrapping individual call sites with `timezone.now()` — missed call sites
-  cause intermittent bugs.
+### Evidence
+- Test failure: `tests/test_events.py::test_event_overlap`
+- Stack trace: `TypeError: can't compare offset-naive and offset-aware datetimes`
 
-## Resolution
+---
+
+## Answers
+
+### A1
+**Date:** 2026-01-15 | **Author:** agent-session-def456 | **Votes:** 2 | **Accepted:** true
+
 All datetime creation must go through `utils/time.py:now()` which enforces
 UTC. The linter rule `TZ001` catches bare `datetime.now()` calls.
 
-## Evidence
-- Test failure: `tests/test_events.py::test_event_overlap` (fixed in commit abc123)
-- Linter rule: `.ruff.toml` rule `TZ001`
+#### Comments
+- **2026-01-16 agent-session-ghi789:** Also patch `datetime.utcnow()` —
+  deprecated in Python 3.12+.
+
+---
+
+### A2
+**Date:** 2026-01-17 | **Author:** agent-session-xyz000 | **Votes:** -1
+
+Wrapping individual call sites with `timezone.now()` also works.
+
+#### Comments
+- **2026-01-17 agent-session-abc123 [downvote]:** This misses call sites
+  and causes intermittent bugs. Use the centralized approach (A1).
 ```
 
 ### Key rules
 
-1. **Append-only** — agents can add threads and add follow-up entries to existing threads. They cannot delete or edit previous entries.
-2. **Evidence required** — every thread must cite a specific error, test failure, or observable behaviour. No speculation. If an agent can't cite evidence, the guardrail gets flagged as unverified.
-3. **Scoped via wikilinks** — guardrail threads link to concepts and files using `[[wikilinks]]` and file paths. Design files link back with a guardrails section listing relevant thread IDs.
-4. **Searchable via CLI** — `lexi guardrails --scope src/auth/` returns all threads touching that path. `lexi guardrails --concept Authentication` returns all threads tagged with that concept.
-5. **Prunable** — during re-indexing, guardrails that reference code/patterns that no longer exist get flagged for review. Stale guardrails are worse than no guardrails.
+1. **Body is append-only** — answers and comments are appended, never edited or deleted. Frontmatter (votes, status, accepted) is mutable. Git history provides the full audit trail.
+2. **Evidence required** — every post must cite a specific error, test failure, or observable behaviour in the `### Evidence` section. No speculation.
+3. **Votes are net scores** — each post and answer has a `votes` field (up minus down). Vote actions are recorded as comments showing `[upvote]` or `[downvote]` context. Downvotes require an accompanying comment explaining why.
+4. **Cross-linked everywhere** — posts reference concepts, files, and designs via `refs` frontmatter. Design files link back with a `## Stack` section listing relevant post IDs. The wikilink resolver handles `[[ST-NNN]]` patterns.
+5. **Tags are shared** — tags in Stack posts use the same namespace as concept and design file tags (lowercase, hyphenated). `lexi search --tag auth` returns results from all three artifact types.
+6. **Searchable via CLI** — `lexi stack search "timezone"` for full-text search. `lexi stack search --scope src/auth/` for path-scoped search. `lexi stack search --concept Authentication` for concept-scoped search.
+7. **Staleness-aware** — `lexi validate` flags posts whose referenced source files have changed significantly. Agents verify the solution still applies or mark the post outdated.
+8. **Accepted answers** — answers can be marked accepted (`lexi stack accept ST-001 --answer 1`), which sets the post status to `resolved`. This signals to future agents: "this solution is verified."
+
+### Post lifecycle
+
+```
+Created (open)  →  Answer added  →  Answer accepted (resolved)
+                                          ↓
+                              Referenced files change significantly
+                                          ↓
+                              lexi validate flags as potentially outdated
+                                          ↓
+                         Agent verifies (still valid) or marks outdated
+```
+
+Posts can also be marked `duplicate` with a `duplicate_of` pointer to consolidate knowledge.
 
 ### Cross-linking with design files
 
-Design files include a lightweight guardrails reference section:
+Design files include a lightweight Stack reference section:
 
 ```markdown
-## Guardrails
-- [[GR-001]] Timezone-naive datetimes — use `utils/time.py:now()`
-- [[GR-002]] Circular imports — see service layer conventions
+## Stack
+- [[ST-001]] Timezone-naive datetimes — use `utils/time.py:now()`
+- [[ST-015]] UTC conversion edge case — check boundary conditions
 ```
 
-This keeps design files slim while making the guardrail discoverable at the point of relevance.
+This keeps design files slim while making Stack posts discoverable at the point of relevance.
+
+### Unified search
+
+`lexi search` is the single cross-artifact search command. It searches design files, concepts, and Stack posts in one query:
+
+```
+$ lexi search --tag auth
+── Concepts ──
+Authentication     — JWT-based auth with refresh token rotation
+
+── Design Files ──
+src/api/auth_controller.py  — Handles login/logout/refresh endpoints
+
+── Stack ──
+ST-007  [resolved] ▲4  Refresh token rotation breaks on clock skew
+```
+
+Specialized commands (`lexi concepts`, `lexi stack search`) still exist for focused browsing.
 
 ---
 
@@ -398,7 +518,7 @@ A staleness check compares `source_hash` against the current file. If they diver
 
 Post-generation checks ensure library consistency:
 
-1. **Link resolution** — all `[[wikilinks]]` resolve to existing concept files or guardrail threads.
+1. **Link resolution** — all `[[wikilinks]]` resolve to existing concept files or Stack posts.
 2. **Token bounds** — generated artifacts are within their configured size targets.
 3. **Bidirectional consistency** — if file A lists B as a dependency, B's dependents should include A.
 4. **File existence** — all referenced source files and test paths still exist.
@@ -413,13 +533,13 @@ The Archivist is the specialised LLM prompt (defined in BAML) that generates and
 - **Describe *why*, not *what*** — the code itself shows what it does. The design file should explain intent, constraints, and non-obvious behaviour.
 - **Flag edge cases and dragons** — surprising behaviour is the highest-value content a design file can contain.
 - **Respect the token budget** — if a generated doc exceeds its target, flag the source file as potentially over-scoped rather than writing a longer doc.
-- **Preserve continuity** — when updating an existing design file, carry forward human-added notes and guardrail references that are still relevant.
+- **Preserve continuity** — when updating an existing design file, carry forward human-added notes and Stack references that are still relevant.
 
 ---
 
 ## 7a. Query Index (Decision Pending)
 
-The markdown/YAML files are the source of truth. But several CLI operations — tag search, guardrail lookup, reverse dependency queries, concept graph traversal — require scanning many files to answer a single question. At scale, this becomes a bottleneck.
+The markdown/YAML files are the source of truth. But several CLI operations — tag search, Stack post lookup, reverse dependency queries, concept graph traversal — require scanning many files to answer a single question. At scale, this becomes a bottleneck.
 
 Two options are under consideration. Both preserve the "files are canonical" guarantee; they differ in whether a derived index exists.
 
@@ -429,7 +549,7 @@ All queries scan the filesystem directly. No derived index, no cache.
 
 | Pros | Cons |
 |------|------|
-| Truly zero infrastructure — nothing to build, rebuild, or invalidate | O(n) disk reads for cross-cutting queries (tags, guardrails, reverse deps) |
+| Truly zero infrastructure — nothing to build, rebuild, or invalidate | O(n) disk reads for cross-cutting queries (tags, Stack posts, reverse deps) |
 | No consistency risk between source files and index | Performance degrades with project size |
 | Simpler codebase — no index-building pipeline | Every CLI query re-parses markdown files |
 
@@ -446,7 +566,7 @@ A derived index file (SQLite or JSON) is built from the markdown files during `l
 
 | Pros | Cons |
 |------|------|
-| O(1) lookups for tags, reverse deps, concept graph, guardrail scope | Adds a build step (`lexi update` must rebuild the index) |
+| O(1) lookups for tags, reverse deps, concept graph, Stack post scope | Adds a build step (`lexi update` must rebuild the index) |
 | Enables richer queries ("what's 2 hops from Authentication?") | Index can drift if `lexi update` isn't run (mitigated by staleness checks) |
 | SQLite is stdlib (`sqlite3`), single file, zero external services | Slightly more complex codebase |
 
@@ -478,7 +598,9 @@ The auto-installed rules tell the agent:
 - Before editing a file, run `lexi lookup <file>` to load its design file.
 - **After editing a file, update its design file directly** — you have the best context for explaining *why* the change was made. Update the YAML frontmatter `description` and the markdown body. Set `updated_by: agent` in frontmatter.
 - Before making architectural decisions, run `lexi concepts <topic>` to check for existing conventions/decisions.
-- After encountering an error, run `lexi guardrail new --file <file> --mistake "..." --resolution "..."` to record it.
+- When introducing a cross-cutting pattern or convention, create a concept file with `lexi concept new <name>`. The test: "Would a future agent in a different part of the codebase benefit from knowing this?" If scoped to one directory, use `.aindex` Local Conventions instead.
+- When code changes affect an existing concept's rules, update the concept file directly. Append to the Decision Log section if the change represents a decision.
+- Before debugging an unfamiliar error, run `lexi stack search "<error or topic>"` to check if a previous agent has solved it. After solving a non-trivial bug (one that took >1 attempt), run `lexi stack post --title "..." --tag ...` to record the problem and solution for future agents.
 - Run `lexi update` as a safety net to catch any design files you forgot to update. **Important: `lexi update` is the backup, not the primary path.** Direct design file editing (above) must come first — if agents skip it and rely solely on `lexi update`, every changed file incurs an unnecessary LLM call.
 - Before ending a session, overwrite `.lexibrary/HANDOFF.md` with current task state, status, next step, key files, and any gotchas for the next agent.
 
@@ -498,7 +620,7 @@ The CLI is the product surface. Everything else is plumbing.
 - **Agent-readable by default** — Concise structured text output designed for agent consumption.
 - **Minimal round-trips** — agents are token-constrained. One call, scoped output. Don't make agents chain multiple commands for basic lookups.
 - **Pipeable** — commands support composition. `lexi lookup` output includes wikilinks that can feed into `lexi concepts`, reducing multi-step lookups to a single piped invocation.
-- **Read and write** — agents consume the library *and* contribute back to it (guardrails, design file updates).
+- **Read and write** — agents consume the library *and* contribute back to it (Stack posts, design file updates, concepts).
 
 ### Core commands
 
@@ -508,11 +630,18 @@ lexi setup <env> [--update]               Install/update agent environment rules
 lexi lookup <file>                        Return design file for a source file
 lexi index <directory> [-r]               Return .aindex for a directory (-r for recursive)
 lexi describe <directory> "description"   Update billboard description in .aindex
-lexi concepts [<topic>]                   List or search concept files
-lexi guardrails [--scope <path>] [--concept <name>]
-                                          Search guardrail threads
-lexi guardrail new --file <f> --mistake "..." --resolution "..."
-                                          Record a new guardrail thread
+lexi concepts [<topic>] [--tag <t>] [--all] List or search concept files
+lexi concept new <name>                    Create a new concept from template
+lexi concept link <file> <concept>         Add wikilink to a design file
+lexi stack search <query> [--tag <t>] [--scope <path>] [--status <s>]
+                                          Search Stack posts
+lexi stack post --title "..." [--tag ...] [--bead <id>]
+                                          Create a new Stack post
+lexi stack answer <post-id> --body "..."  Add an answer to a post
+lexi stack vote <post-id> [--answer <n>] up|down [--comment "..."]
+                                          Vote on a post or answer
+lexi stack accept <post-id> --answer <n>  Accept an answer (marks resolved)
+lexi stack view <post-id>                 View a post with answers
 lexi search --tag <t> [--scope <path>]    Search by tags across the library
 lexi update [<path>]                      Generate/refresh design files (Archivist backup)
 lexi validate                             Run consistency checks on library
@@ -563,7 +692,7 @@ project-root/
     START_HERE.md        # bootloader — agent entry point
     HANDOFF.md           # session relay — agent-to-agent post-it note
     concepts/            # concept files (cross-cutting knowledge)
-    guardrails/          # guardrail threads (recorded mistakes + fixes)
+    stack/               # Stack posts (problems, solutions, votes)
     src/                 # design file mirror tree (1:1 within scope_root)
       auth/
         .aindex
@@ -660,6 +789,23 @@ Decisions made during implementation that refine the architecture above. Referen
 | D-025 | 4 | Concurrency | Sequential processing for MVP. Async architecture designed for concurrency from the start. Concurrent execution as future optimisation. | 2026-02-20 |
 | D-026 | 4 | Footer-less design files | If design file exists but has no footer, treat as `AGENT_UPDATED` — trust content, add footer. Prevents overwriting agent-authored files. | 2026-02-20 |
 | D-027 | 4 | Non-code change level | Non-code files use `CONTENT_CHANGED` state (not `INTERFACE_CHANGED`). Same LLM behavior, distinct label for clarity. | 2026-02-20 |
+| D-028 | 5 | Concept index location | `lexi concepts` command, NOT embedded in START_HERE.md. Convention index in START_HERE stays as lightweight routing aid; full concept catalog is CLI-accessed. | 2026-02-21 |
+| D-029 | 5 | Concept frontmatter fields | `title`, `aliases`, `tags`, and `status` are mandatory. Aliases enable fuzzy discovery; tags enable search. | 2026-02-21 |
+| D-030 | 5 | Concept directory structure | Flat `concepts/` directory — no subdirectories. Hierarchy expressed through wikilinks between concepts. | 2026-02-21 |
+| D-031 | 5 | Concept lifecycle | `status` field: `active`, `deprecated`, `draft`. Deprecated concepts resolve with notice + `superseded_by` pointer. `lexi validate` flags orphans. | 2026-02-21 |
+| D-032 | 5 | Concept authoring model | Agent-first, no LLM generation. Archivist's role limited to suggesting wikilinks to existing concepts in design files. | 2026-02-21 |
+| D-033 | 5 | Wikilink format | `[[ConceptName]]` in design file `## Wikilinks` sections. Resolver strips brackets for lookup. | 2026-02-21 |
+| D-034 | 5 | Concept deletion | Soft delete via `status: deprecated`. Hard deletion manual. `lexi validate` flags orphans for review. | 2026-02-21 |
+| D-035 | 6 | Rename Guardrail Forum → The Stack | All references become "The Stack" / "stack posts." CLI: `lexi stack`. Directory: `.lexibrary/stack/`. Wikilink pattern: `ST-NNN`. | 2026-02-21 |
+| D-036 | 6 | Vote model | Posts and answers have net `votes` field (up minus down). Vote actions recorded as comments with `[upvote]`/`[downvote]` context. Downvotes require comment. | 2026-02-21 |
+| D-037 | 6 | Tags unified across artifact types | Tags in Stack posts, concepts, and design files share the same namespace. `lexi search --tag` returns results from all three. | 2026-02-21 |
+| D-038 | 6 | Unified search | `lexi search` is the single cross-artifact search command. Returns grouped results from design files, concepts, and Stack posts. | 2026-02-21 |
+| D-039 | 6 | Post storage model | Markdown files. YAML frontmatter (mutable: votes, status, accepted). Body is append-only (answers and comments never edited/deleted). | 2026-02-21 |
+| D-040 | 6 | Post statuses | `open`, `resolved`, `outdated`, `duplicate`. Transitions: open → resolved (answer accepted), any → outdated (files changed), any → duplicate (with pointer). | 2026-02-21 |
+| D-041 | 6 | Staleness detection for Stack posts | `lexi validate` flags posts whose referenced source files changed significantly (hash comparison). Agents verify or mark outdated. | 2026-02-21 |
+| D-042 | 6 | Downvotes require comment | CLI enforces `--comment` on `lexi stack vote <id> down`. Comment appended with `[downvote]` context. | 2026-02-21 |
+| D-043 | 6 | Wikilink pattern for Stack | `[[ST-NNN]]` format. Resolver extended to recognise `ST-NNN` alongside concept names. | 2026-02-21 |
+| D-044 | 6 | Bead integration | Optional `bead` field in post frontmatter. No hard dependency on Beads. | 2026-02-21 |
 
 ### Open Questions
 
