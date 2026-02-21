@@ -93,6 +93,10 @@ src/lexibrarian/
 │   ├── logging.py               ← setup_logging() rich handler
 │   ├── paths.py                 ← Path helpers for .lexibrary/ layout
 │   └── root.py                  ← find_project_root() — walks up to locate .lexibrary/
+├── validator/                   ← Library health checks and validation reporting (Phase 7)
+│   ├── __init__.py              ← Public API: validate_library(), AVAILABLE_CHECKS; check registry
+│   ├── checks.py                ← Individual check functions (error/warning/info severity)
+│   └── report.py                ← ValidationIssue, ValidationSummary, ValidationReport models
 └── wiki/                        ← Concept file parser, serializer, template, resolver, and index (Phase 5)
     ├── __init__.py              ← Public API re-exports
     ├── index.py                 ← ConceptIndex — in-memory search/retrieval of concept files
@@ -119,6 +123,7 @@ src/lexibrarian/
 | `stack` | Stack Q&A knowledge base: `StackPost`, `StackIndex`, `parse_stack_post`, `serialize_stack_post`, `render_post_template`; mutations: `add_answer`, `record_vote`, `accept_answer`, `mark_duplicate`, `mark_outdated` |
 | `tokenizer` | `TokenCounter` protocol; tiktoken / anthropic / approximate backends |
 | `utils` | `hash_file`, `detect_language`, `setup_logging`, `find_project_root`, path helpers |
+| `validator` | `validate_library()` orchestrator; `AVAILABLE_CHECKS` registry; `ValidationReport`, `ValidationIssue`, `ValidationSummary` models; 10 individual checks grouped by severity (error: wikilink_resolution, file_existence, concept_frontmatter; warning: hash_freshness, token_budgets, orphan_concepts, deprecated_concept_usage; info: forward_dependencies, stack_staleness, aindex_coverage) |
 | `wiki` | `ConceptIndex` (search/retrieval by title, alias, tag, substring); `parse_concept_file`; `serialize_concept_file`; `WikilinkResolver` (`ResolvedLink`, `UnresolvedLink`); `render_concept_template`, `concept_file_path` |
 | `search` | `unified_search()` — cross-artifact search across concepts, design files, and Stack posts; `SearchResults` with Rich rendering |
 
@@ -148,6 +153,9 @@ src/lexibrarian/
 | Add / modify concept wiki utilities | `blueprints/src/lexibrarian/wiki/` |
 | Add / modify Stack Q&A features | `blueprints/src/lexibrarian/stack/` |
 | Change cross-artifact search | `blueprints/src/lexibrarian/search.md` |
+| Add / modify validation checks | `blueprints/src/lexibrarian/validator/checks.md` |
+| Change validation report models | `blueprints/src/lexibrarian/validator/report.md` |
+| Change validation orchestrator | `blueprints/src/lexibrarian/validator/__init__.md` |
 
 ## Key Constraints
 

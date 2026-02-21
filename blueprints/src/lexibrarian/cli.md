@@ -1,6 +1,6 @@
 # cli
 
-**Summary:** Typer app defining all `lexi` CLI subcommands; wires user intent to `init`, `index`, `update`, `lookup`, `describe`, `concepts`, and `stack` operations.
+**Summary:** Typer app defining all `lexi` CLI subcommands; wires user intent to `init`, `index`, `update`, `lookup`, `describe`, `concepts`, `stack`, `validate`, `status`, and `search` operations.
 
 ## Interface
 
@@ -25,8 +25,8 @@
 | `stack_view` | `(post_id) -> None` | **Implemented** -- display full post with Rich formatting (Panel header, Markdown body, answers, comments) |
 | `stack_list` | `(*, status, tag) -> None` | **Implemented** -- list Stack posts in a Rich table with optional status/tag filters |
 | `search` | `(query: str \| None, *, tag, scope) -> None` | **Implemented** -- unified cross-artifact search via `unified_search()`; searches concepts, design files, and Stack posts by query/tag/scope |
-| `validate` | `() -> None` | Stub -- run consistency checks |
-| `status` | `(path: Path \| None) -> None` | Stub -- show library health |
+| `validate` | `(*, severity: str \| None, check: str \| None, json_output: bool) -> None` | **Implemented** -- run consistency checks with optional severity/check filters; outputs Rich tables or JSON; exits with `report.exit_code()` |
+| `status` | `(path: Path \| None, *, quiet: bool) -> None` | **Implemented** -- dashboard showing design file counts/staleness, concept counts by status, stack post counts, validation issues summary, last updated timestamp; `--quiet`/`-q` for CI/hooks single-line output |
 | `setup` | `(environment, *, update_flag) -> None` | Stub -- install agent environment rules |
 | `daemon` | `(path: Path \| None) -> None` | Stub -- start background file watcher |
 
@@ -52,10 +52,12 @@
 - `lexibrarian.stack.mutations` -- `add_answer`, `record_vote`, `accept_answer` (lazy imports)
 - `lexibrarian.stack.parser` -- `parse_stack_post` (lazy import in `stack_view`)
 - `lexibrarian.search` -- `unified_search` (lazy import in `search`)
+- `lexibrarian.validator` -- `AVAILABLE_CHECKS`, `validate_library` (lazy imports in `validate`, `status`)
+- `lexibrarian.wiki.parser` -- `parse_concept_file` (lazy import in `status`)
 
 ## Key Concepts
 
-- `init`, `index`, `update`, `lookup`, `describe`, `concepts`, `concept new`, `concept link`, `search`, and all `stack` commands are fully implemented; `validate`, `status`, `setup`, `daemon` remain stubs
+- `init`, `index`, `update`, `lookup`, `describe`, `concepts`, `concept new`, `concept link`, `search`, `validate`, `status`, and all `stack` commands are fully implemented; `setup`, `daemon` remain stubs
 - `_require_project_root()` resolves project root or exits with user-friendly error
 - `console` is a module-level `rich.Console` -- no bare `print()`
 - `update` uses `asyncio.run()` to drive the async archivist pipeline
@@ -65,7 +67,8 @@
 
 ## Dragons
 
-- Stub commands call `_require_project_root()` so they fail gracefully outside a project -- preserve this check when implementing them
+- Remaining stub commands (`setup`, `daemon`) call `_require_project_root()` so they fail gracefully outside a project -- preserve this check when implementing them
+- `validate` exits non-zero when errors are found; `status` delegates to `validate_library()` for lightweight error/warning counting and mirrors the exit code
 - `index` validates that the target directory exists, is a directory, and is within the project root before proceeding
 - `update` lazy-imports archivist modules to keep CLI startup fast
 - Stack ID auto-assignment uses filesystem scan -- concurrent creation could cause ID collision (mitigated by single-agent use case)

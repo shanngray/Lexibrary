@@ -225,15 +225,10 @@ class TestStubCommands:
         assert result.exit_code == 1  # type: ignore[union-attr]
         assert "Provide a query" in result.output  # type: ignore[union-attr]
 
-    def test_validate_stub(self, tmp_path: Path) -> None:
-        result = self._invoke_in_project(tmp_path, ["validate"])
-        assert result.exit_code == 0  # type: ignore[union-attr]
-        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
-
-    def test_status_stub(self, tmp_path: Path) -> None:
+    def test_status_shows_dashboard(self, tmp_path: Path) -> None:
         result = self._invoke_in_project(tmp_path, ["status"])
         assert result.exit_code == 0  # type: ignore[union-attr]
-        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+        assert "Lexibrarian Status" in result.output  # type: ignore[union-attr]
 
     def test_setup_stub(self, tmp_path: Path) -> None:
         result = self._invoke_in_project(tmp_path, ["setup"])
@@ -272,6 +267,275 @@ class TestNoProjectRoot:
 
     def test_daemon_no_project_root(self, tmp_path: Path) -> None:
         result = self._invoke_without_project(tmp_path, ["daemon"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "No .lexibrary/" in result.output  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# Validate command tests
+# ---------------------------------------------------------------------------
+
+
+def _setup_validate_project(tmp_path: Path) -> Path:
+    """Create a project with known validation issues for testing.
+
+    Sets up:
+    - A minimal .lexibrary with config
+    - A source file with a matching design file (fresh hash)
+    - A concept file with valid frontmatter
+    - No deliberate errors (clean baseline)
+    """
+    (tmp_path / ".lexibrary").mkdir()
+    (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+    (tmp_path / ".lexibrary" / "concepts").mkdir(parents=True)
+    (tmp_path / "src").mkdir()
+    source_content = "def hello():\n    pass\n"
+    (tmp_path / "src" / "main.py").write_text(source_content)
+
+    # Create a design file with correct hash
+    source_hash = hashlib.sha256(source_content.encode()).hexdigest()
+    design_dir = tmp_path / ".lexibrary" / "src"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    design_content = f"""---
+description: Main module
+updated_by: archivist
+---
+
+# src/main.py
+
+Main module.
+
+## Interface Contract
+
+```python
+def hello(): ...
+```
+
+## Dependencies
+
+- (none)
+
+## Dependents
+
+- (none)
+
+<!-- lexibrarian:meta
+source: src/main.py
+source_hash: {source_hash}
+design_hash: placeholder
+generated: 2026-01-01T00:00:00
+generator: lexibrarian-v2
+-->
+"""
+    (design_dir / "main.py.md").write_text(design_content, encoding="utf-8")
+    return tmp_path
+
+
+def _setup_validate_project_with_errors(tmp_path: Path) -> Path:
+    """Create a project that will produce validation errors.
+
+    Includes a concept file missing mandatory frontmatter fields.
+    """
+    project = _setup_validate_project(tmp_path)
+    # Create a broken concept file (missing required frontmatter fields)
+    concepts_dir = project / ".lexibrary" / "concepts"
+    concepts_dir.mkdir(parents=True, exist_ok=True)
+    (concepts_dir / "BrokenConcept.md").write_text(
+        "---\ntitle: Broken\n---\n\nMissing aliases, tags, status.\n",
+        encoding="utf-8",
+    )
+    return project
+
+
+def _setup_validate_project_with_warnings(tmp_path: Path) -> Path:
+    """Create a project with stale hash (warning) but no errors.
+
+    Writes a design file whose source_hash does not match the actual source.
+    """
+    (tmp_path / ".lexibrary").mkdir()
+    (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+    (tmp_path / ".lexibrary" / "concepts").mkdir(parents=True)
+    (tmp_path / "src").mkdir()
+    source_content = "def hello():\n    return 42\n"
+    (tmp_path / "src" / "main.py").write_text(source_content)
+
+    # Design file with WRONG hash (stale)
+    design_dir = tmp_path / ".lexibrary" / "src"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    design_content = """---
+description: Main module
+updated_by: archivist
+---
+
+# src/main.py
+
+Main module.
+
+## Interface Contract
+
+```python
+def hello(): ...
+```
+
+## Dependencies
+
+- (none)
+
+## Dependents
+
+- (none)
+
+<!-- lexibrarian:meta
+source: src/main.py
+source_hash: 0000000000000000000000000000000000000000000000000000000000000000
+design_hash: placeholder
+generated: 2026-01-01T00:00:00
+generator: lexibrarian-v2
+-->
+"""
+    (design_dir / "main.py.md").write_text(design_content, encoding="utf-8")
+    return tmp_path
+
+
+class TestValidateCommand:
+    """Tests for the `lexi validate` command (task group 6)."""
+
+    def _invoke(self, tmp_path: Path, args: list[str]) -> object:
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return runner.invoke(app, args)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_validate_clean_exit_0(self, tmp_path: Path) -> None:
+        """A clean library with no issues exits with code 0."""
+        project = _setup_validate_project(tmp_path)
+        # Make an .aindex so aindex_coverage does not fire info
+        aindex_dir = project / ".lexibrary" / "src"
+        aindex_dir.mkdir(parents=True, exist_ok=True)
+        from datetime import datetime as _dt
+
+        now = _dt.now().isoformat()
+        (aindex_dir / ".aindex").write_text(
+            f"""# src/
+
+Source directory
+
+## Child Map
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `main.py` | file | Main module |
+
+## Local Conventions
+
+(none)
+
+<!-- lexibrarian:meta source="src" source_hash="abc" generated="{now}" generator="lexibrarian-v2" -->
+""",
+            encoding="utf-8",
+        )
+        # Also create root .aindex
+        root_aindex_dir = project / ".lexibrary"
+        (root_aindex_dir / ".aindex").write_text(
+            f"""# ./
+
+Project root
+
+## Child Map
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `src/` | dir | Source code |
+
+## Local Conventions
+
+(none)
+
+<!-- lexibrarian:meta source="." source_hash="abc" generated="{now}" generator="lexibrarian-v2" -->
+""",
+            encoding="utf-8",
+        )
+        result = self._invoke(project, ["validate"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        assert "No validation issues found" in result.output  # type: ignore[union-attr]
+
+    def test_validate_errors_exit_1(self, tmp_path: Path) -> None:
+        """A library with error-severity issues exits with code 1."""
+        project = _setup_validate_project_with_errors(tmp_path)
+        result = self._invoke(project, ["validate"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "error" in output.lower()
+
+    def test_validate_warnings_only_exit_2(self, tmp_path: Path) -> None:
+        """A library with only warning-severity issues exits with code 2."""
+        project = _setup_validate_project_with_warnings(tmp_path)
+        # Run only hash_freshness check (warning-level) to isolate warnings
+        result = self._invoke(project, ["validate", "--check", "hash_freshness"])
+        assert result.exit_code == 2  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "warning" in output.lower()
+
+    def test_validate_json_produces_valid_json(self, tmp_path: Path) -> None:
+        """The --json flag outputs valid JSON with issues and summary."""
+        import json as _json
+
+        project = _setup_validate_project(tmp_path)
+        result = self._invoke(project, ["validate", "--json"])
+        output = result.output  # type: ignore[union-attr]
+        parsed = _json.loads(output)
+        assert "issues" in parsed
+        assert "summary" in parsed
+        assert isinstance(parsed["issues"], list)
+        assert isinstance(parsed["summary"], dict)
+        assert "error_count" in parsed["summary"]
+        assert "warning_count" in parsed["summary"]
+        assert "info_count" in parsed["summary"]
+        assert "total" in parsed["summary"]
+
+    def test_validate_severity_filter(self, tmp_path: Path) -> None:
+        """The --severity flag filters checks by severity level."""
+        import json as _json
+
+        project = _setup_validate_project_with_warnings(tmp_path)
+        # With --severity error, only error-level checks run (no warnings expected)
+        result = self._invoke(project, ["validate", "--severity", "error", "--json"])
+        output = result.output  # type: ignore[union-attr]
+        parsed = _json.loads(output)
+        # No warning or info issues should be present because only error-level checks ran
+        assert parsed["summary"]["warning_count"] == 0
+        assert parsed["summary"]["info_count"] == 0
+
+    def test_validate_check_runs_single_check(self, tmp_path: Path) -> None:
+        """The --check flag runs only the specified check."""
+        import json as _json
+
+        project = _setup_validate_project(tmp_path)
+        result = self._invoke(
+            project, ["validate", "--check", "concept_frontmatter", "--json"]
+        )
+        output = result.output  # type: ignore[union-attr]
+        parsed = _json.loads(output)
+        # All issues (if any) should be from the concept_frontmatter check
+        for issue in parsed["issues"]:
+            assert issue["check"] == "concept_frontmatter"
+
+    def test_validate_invalid_check_name_shows_available(self, tmp_path: Path) -> None:
+        """An invalid --check name shows available checks and exits 1."""
+        project = _setup_validate_project(tmp_path)
+        result = self._invoke(project, ["validate", "--check", "nonexistent_check"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "Available checks" in output or "Unknown check" in output
+        # Should list some real check names
+        assert "concept_frontmatter" in output
+        assert "hash_freshness" in output
+
+    def test_validate_no_project_root(self, tmp_path: Path) -> None:
+        """Validate without .lexibrary should exit 1."""
+        result = self._invoke(tmp_path, ["validate"])
         assert result.exit_code == 1  # type: ignore[union-attr]
         assert "No .lexibrary/" in result.output  # type: ignore[union-attr]
 
@@ -1598,3 +1862,367 @@ class TestUnifiedSearchCommand:
         assert "Concepts" not in output
         # Design files and stack posts should appear
         assert "src/auth.py" in output or "src/models.py" in output
+
+
+# ---------------------------------------------------------------------------
+# Helper for convention inheritance tests
+# ---------------------------------------------------------------------------
+
+
+def _create_aindex_with_conventions(
+    tmp_path: Path,
+    directory_rel: str,
+    billboard: str,
+    conventions: list[str] | None = None,
+) -> Path:
+    """Create a .aindex file with optional local conventions."""
+    aindex_file = tmp_path / ".lexibrary" / directory_rel / ".aindex"
+    aindex_file.parent.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now().isoformat()
+
+    conv_section = (
+        "\n".join(f"- {c}" for c in conventions) if conventions else "(none)"
+    )
+
+    meta = (
+        f'<!-- lexibrarian:meta source="{directory_rel}" '
+        f'source_hash="abc123" generated="{now}" '
+        f'generator="lexibrarian-v2" -->'
+    )
+    content = f"""# {directory_rel}/
+
+{billboard}
+
+## Child Map
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `main.py` | file | Main module |
+
+## Local Conventions
+
+{conv_section}
+
+{meta}
+"""
+    aindex_file.write_text(content, encoding="utf-8")
+    return aindex_file
+
+
+# ---------------------------------------------------------------------------
+# Lookup convention inheritance tests
+# ---------------------------------------------------------------------------
+
+
+class TestLookupConventionInheritance:
+    """Tests for convention inheritance in `lexi lookup` (task group 8)."""
+
+    def _invoke(self, tmp_path: Path, args: list[str]) -> object:
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return runner.invoke(app, args)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_conventions_from_multiple_parents(self, tmp_path: Path) -> None:
+        """Conventions from multiple parent directories shown in bottom-up order."""
+        project = _setup_archivist_project(tmp_path)
+        # Create nested structure: src/payments/stripe/charge.py
+        (project / "src" / "payments").mkdir(parents=True)
+        (project / "src" / "payments" / "stripe").mkdir()
+        source_content = "def charge(): pass\n"
+        (project / "src" / "payments" / "stripe" / "charge.py").write_text(source_content)
+
+        # Create design file for the source
+        _create_design_file(project, "src/payments/stripe/charge.py", source_content)
+
+        # Create .aindex files with conventions at different levels
+        _create_aindex_with_conventions(
+            project,
+            "src/payments",
+            "Payment processing",
+            ["All monetary values use Decimal"],
+        )
+        _create_aindex_with_conventions(
+            project,
+            "src",
+            "Source code root",
+            ["Use UTC everywhere"],
+        )
+
+        result = self._invoke(project, ["lookup", "src/payments/stripe/charge.py"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+
+        # Should have conventions section
+        assert "Applicable Conventions" in output
+        # Closest directory first
+        assert "src/payments/" in output
+        assert "All monetary values use Decimal" in output
+        assert "Use UTC everywhere" in output
+        # payments/ should appear before src/ (closest first)
+        payments_idx = output.index("src/payments/")
+        src_idx = output.index("From `src/`")
+        assert payments_idx < src_idx
+
+    def test_no_conventions_means_no_section(self, tmp_path: Path) -> None:
+        """No conventions in any parent means no extra section appended."""
+        project = _setup_archivist_project(tmp_path)
+        source_content = "def hello():\n    pass\n"
+        _create_design_file(project, "src/main.py", source_content)
+
+        # Create .aindex with no conventions
+        _create_aindex_with_conventions(project, "src", "Source root", conventions=None)
+
+        result = self._invoke(project, ["lookup", "src/main.py"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+
+        # Should NOT have conventions section
+        assert "Applicable Conventions" not in output
+
+    def test_missing_aindex_silently_skipped(self, tmp_path: Path) -> None:
+        """Missing .aindex files are silently skipped without errors."""
+        project = _setup_archivist_project(tmp_path)
+        # Create nested dir without .aindex at intermediate level
+        (project / "src" / "api").mkdir(parents=True)
+        source_content = "def endpoint(): pass\n"
+        (project / "src" / "api" / "auth.py").write_text(source_content)
+        _create_design_file(project, "src/api/auth.py", source_content)
+
+        # Only create .aindex at src/ level (not src/api/)
+        _create_aindex_with_conventions(
+            project,
+            "src",
+            "Source root",
+            ["Use type hints everywhere"],
+        )
+
+        result = self._invoke(project, ["lookup", "src/api/auth.py"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+
+        # Should still pick up conventions from src/
+        assert "Applicable Conventions" in output
+        assert "Use type hints everywhere" in output
+        # No errors about missing .aindex
+        assert "Error" not in output
+
+    def test_walk_stops_at_scope_root(self, tmp_path: Path) -> None:
+        """Convention walk does not traverse above scope_root."""
+        project = _setup_archivist_project(tmp_path)
+        # Set scope_root to src/
+        (project / ".lexibrary" / "config.yaml").write_text("scope_root: src\n")
+
+        source_content = "def handler(): pass\n"
+        (project / "src" / "main.py").write_text(source_content)
+        _create_design_file(project, "src/main.py", source_content)
+
+        # Create .aindex at project root (above scope_root) with conventions
+        _create_aindex_with_conventions(
+            project,
+            ".",
+            "Project root",
+            ["Root convention that should NOT appear"],
+        )
+        # Create .aindex at src/ (within scope_root) with conventions
+        _create_aindex_with_conventions(
+            project,
+            "src",
+            "Source root",
+            ["Src convention that SHOULD appear"],
+        )
+
+        result = self._invoke(project, ["lookup", "src/main.py"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+
+        # Conventions from src/ should appear (within scope_root)
+        assert "Src convention that SHOULD appear" in output
+        # Conventions from project root should NOT appear (above scope_root)
+        assert "Root convention that should NOT appear" not in output
+
+
+# ---------------------------------------------------------------------------
+# Status command tests (task group 7)
+# ---------------------------------------------------------------------------
+
+
+def _setup_status_project(tmp_path: Path) -> Path:
+    """Create a project with design files, concepts, and stack posts for status tests."""
+    (tmp_path / ".lexibrary").mkdir()
+    (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+    (tmp_path / "src").mkdir()
+    return tmp_path
+
+
+class TestStatusCommand:
+    """Tests for the `lexi status` command."""
+
+    def _invoke(self, tmp_path: Path, args: list[str]) -> object:
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return runner.invoke(app, args)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_status_output_format(self, tmp_path: Path) -> None:
+        """Status shows dashboard with artifact counts and issues."""
+        project = _setup_status_project(tmp_path)
+
+        # Create source files and design files
+        src_content = "def hello(): pass\n"
+        (project / "src" / "main.py").write_text(src_content)
+        _create_design_file(project, "src/main.py", src_content)
+
+        # Create concepts
+        _create_concept_file(project, "Auth", tags=["security"], status="active")
+        _create_concept_file(project, "Cache", tags=["perf"], status="draft")
+
+        # Create stack posts
+        _create_stack_post(project, post_id="ST-001", title="Test bug", status="open")
+        _create_stack_post(
+            project, post_id="ST-002", title="Fixed issue", status="resolved"
+        )
+
+        result = self._invoke(project, ["status"])
+        output = result.output  # type: ignore[union-attr]
+
+        # Dashboard header
+        assert "Lexibrarian Status" in output
+        # File counts
+        assert "Files:" in output
+        assert "1 tracked" in output
+        # Concept counts
+        assert "Concepts:" in output
+        assert "1 active" in output
+        assert "1 draft" in output
+        # Stack counts
+        assert "Stack:" in output
+        assert "2 post" in output
+        assert "1 resolved" in output
+        assert "1 open" in output
+        # Issues line
+        assert "Issues:" in output
+        # Updated line
+        assert "Updated:" in output
+
+    def test_status_clean_library_exits_0(self, tmp_path: Path) -> None:
+        """Clean library with no validation issues exits with code 0."""
+        project = _setup_status_project(tmp_path)
+        src_content = "x = 1\n"
+        (project / "src" / "main.py").write_text(src_content)
+        _create_design_file(project, "src/main.py", src_content)
+
+        result = self._invoke(project, ["status"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+
+    def test_status_empty_library(self, tmp_path: Path) -> None:
+        """Empty library shows zero counts and 'Updated: never'."""
+        project = _setup_status_project(tmp_path)
+        result = self._invoke(project, ["status"])
+        output = result.output  # type: ignore[union-attr]
+        assert "Files: 0 tracked" in output
+        assert "Concepts: 0" in output
+        assert "Stack: 0 posts" in output
+        assert "Updated: never" in output
+        assert result.exit_code == 0  # type: ignore[union-attr]
+
+    def test_status_quiet_healthy(self, tmp_path: Path) -> None:
+        """Quiet mode with no issues outputs 'lexi: library healthy'."""
+        project = _setup_status_project(tmp_path)
+        result = self._invoke(project, ["status", "--quiet"])
+        output = result.output.strip()  # type: ignore[union-attr]
+        assert output == "lexi: library healthy"
+        assert result.exit_code == 0  # type: ignore[union-attr]
+
+    def test_status_quiet_with_warnings(self, tmp_path: Path) -> None:
+        """Quiet mode with warnings shows count and suggests validate."""
+        project = _setup_status_project(tmp_path)
+
+        # Create a stale design file (source hash mismatch -> warning from hash_freshness)
+        original_content = "def hello(): pass\n"
+        (project / "src" / "stale.py").write_text("def hello(): return 1\n")
+        _create_design_file(project, "src/stale.py", original_content)
+
+        result = self._invoke(project, ["status", "--quiet"])
+        output = result.output.strip()  # type: ignore[union-attr]
+        # Should mention warnings and suggest lexi validate
+        assert "warning" in output
+        assert "lexi validate" in output
+        assert result.exit_code == 2  # type: ignore[union-attr]
+
+    def test_status_stale_files_counted(self, tmp_path: Path) -> None:
+        """Status reports stale file count when hashes mismatch."""
+        project = _setup_status_project(tmp_path)
+
+        # Create a fresh file
+        fresh_content = "x = 1\n"
+        (project / "src" / "fresh.py").write_text(fresh_content)
+        _create_design_file(project, "src/fresh.py", fresh_content)
+
+        # Create a stale file (content differs from hash in design file)
+        original_content = "y = 2\n"
+        (project / "src" / "stale.py").write_text("y = 3\n")
+        _create_design_file(project, "src/stale.py", original_content)
+
+        result = self._invoke(project, ["status"])
+        output = result.output  # type: ignore[union-attr]
+        assert "2 tracked" in output
+        assert "1 stale" in output
+
+    def test_status_concept_status_breakdown(self, tmp_path: Path) -> None:
+        """Status shows concept counts broken down by status."""
+        project = _setup_status_project(tmp_path)
+
+        _create_concept_file(project, "Alpha", tags=["a"], status="active")
+        _create_concept_file(project, "Beta", tags=["b"], status="active")
+        _create_concept_file(project, "Gamma", tags=["c"], status="deprecated")
+        _create_concept_file(project, "Delta", tags=["d"], status="draft")
+
+        result = self._invoke(project, ["status"])
+        output = result.output  # type: ignore[union-attr]
+        assert "2 active" in output
+        assert "1 deprecated" in output
+        assert "1 draft" in output
+
+    def test_status_no_validate_suggestion_when_clean(self, tmp_path: Path) -> None:
+        """When no issues, the 'Run lexi validate' suggestion is not shown."""
+        project = _setup_status_project(tmp_path)
+        result = self._invoke(project, ["status"])
+        output = result.output  # type: ignore[union-attr]
+        assert "lexi validate" not in output
+
+    def test_status_validate_suggestion_when_issues(self, tmp_path: Path) -> None:
+        """When issues exist, suggests running lexi validate."""
+        project = _setup_status_project(tmp_path)
+
+        # Create stale file to generate a warning
+        original = "x = 1\n"
+        (project / "src" / "s.py").write_text("x = 2\n")
+        _create_design_file(project, "src/s.py", original)
+
+        result = self._invoke(project, ["status"])
+        output = result.output  # type: ignore[union-attr]
+        assert "Run `lexi validate` for details." in output
+
+    def test_status_exit_code_with_warnings(self, tmp_path: Path) -> None:
+        """Status exits with code 2 when warnings exist but no errors."""
+        project = _setup_status_project(tmp_path)
+
+        # Stale file -> hash_freshness warning
+        original = "a = 1\n"
+        (project / "src" / "w.py").write_text("a = 2\n")
+        _create_design_file(project, "src/w.py", original)
+
+        result = self._invoke(project, ["status"])
+        assert result.exit_code == 2  # type: ignore[union-attr]
+
+    def test_status_no_project_exits_1(self, tmp_path: Path) -> None:
+        """Status without .lexibrary should exit 1."""
+        result = self._invoke(tmp_path, ["status"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "No .lexibrary/" in result.output  # type: ignore[union-attr]

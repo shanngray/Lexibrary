@@ -520,11 +520,29 @@ Post-generation checks ensure library consistency:
 
 1. **Link resolution** — all `[[wikilinks]]` resolve to existing concept files or Stack posts.
 2. **Token bounds** — generated artifacts are within their configured size targets.
-3. **Bidirectional consistency** — if file A lists B as a dependency, B's dependents should include A.
+3. **Bidirectional consistency** — if file A lists B as a dependency, B's dependents should include A. (Requires the reverse dependency index — deferred until that is implemented.)
 4. **File existence** — all referenced source files and test paths still exist.
 5. **Hash freshness** — no artifacts have stale `source_hash` values.
+6. **Stack post references** — Stack posts only reference existing files/concepts.
+
+Validation issues are grouped by severity: **errors** (blocks work — broken references, missing files), **warnings** (drift — stale hashes, token budget violations, orphan concepts), **info** (hygiene — bidirectional gaps, potentially outdated Stack posts).
 
 Validation runs automatically after generation and can be invoked standalone via `lexi validate`. Failures are surfaced in `lexi status`.
+
+### Maintenance service pattern
+
+Library health (`lexi validate`, `lexi status`) is a **maintenance concern, not a coding workflow concern**. Asking a coding agent to run `lexi validate` and triage dozens of issues mid-task is a distraction that pulls it away from its primary work.
+
+The long-term operational model:
+
+| Role | Commands | When |
+|------|----------|------|
+| **Coding agents** | `lexi lookup`, `lexi search`, `lexi update`, direct edits | During development — read and write-back |
+| **Maintenance service** | `lexi validate`, `lexi status`, staleness remediation | Scheduled or triggered — library upkeep |
+| **CI/CD pipeline** | `lexi validate` as a gate | On commit/PR — like a linter |
+| **Agent hooks** | `lexi status --quiet` at session start | Passive health signal — "library has 3 warnings" |
+
+Agent environment rules (Section 8) should direct coding agents to read operations (`lexi lookup`, `lexi search`) and write-back operations (`lexi update`, design file edits, Stack posts). Maintenance operations (`lexi validate`) are the domain of a dedicated process, not something agents should be burdened with routinely.
 
 ### Archivist prompt design
 
@@ -607,6 +625,24 @@ The auto-installed rules tell the agent:
 ### Updatable
 
 `lexi setup <environment> --update` refreshes the rules if Lexibrarian's conventions have evolved, without clobbering user customisations.
+
+### Integration mechanisms beyond rules
+
+Rules files tell agents what to do, but deeper integration makes library usage automatic rather than opt-in. The agent setup should generate environment-appropriate integration points:
+
+**Hooks** (environment-specific, event-driven):
+- **Session start hook** — runs `lexi status --quiet` and surfaces a one-line health warning if the library needs attention. Agents see this passively without having to remember to check.
+- **Pre-edit hook** — runs `lexi lookup <file>` before file modifications, ensuring the agent always has the design file context. (Note: may be too aggressive for some workflows — configurable.)
+
+**Skills / Commands** (agent-invocable, on-demand):
+- **Orient skill** (`/lexi-orient` or equivalent) — reads `START_HERE.md` + `HANDOFF.md` + runs `lexi status`, returning a single consolidated context block for session start. Reduces three manual steps to one invocation.
+- **Search skill** (`/lexi-search <topic>`) — wraps `lexi search` with richer context, combining concept lookup + Stack search + relevant design files into one response.
+
+**Subagent patterns** (for multi-agent environments):
+- A **library maintenance subagent** that handles `lexi validate` issues, runs periodic `lexi update`, and keeps the library healthy — freeing coding agents from maintenance tasks entirely.
+- A **knowledge capture subagent** that monitors coding sessions and prompts for Stack posts when non-trivial debugging occurs, or suggests concept creation when cross-cutting patterns emerge.
+
+The specific mechanisms depend on the agent environment's capabilities. The principle: **make the right thing automatic, the useful thing easy, and the maintenance thing invisible.**
 
 ---
 
@@ -775,7 +811,7 @@ Decisions made during implementation that refine the architecture above. Referen
 | D-011 | 4 | File scope | All files within `scope_root` get design files. Non-code files use content hash only. Files outside `scope_root` appear in `.aindex` but don't get design files. | 2026-02-20 |
 | D-012 | 4 | LLM client routing | Config-driven via BAML `ClientRegistry`. Provider selected based on `LLMConfig.provider` at runtime. | 2026-02-20 |
 | D-013 | 4 | LLM input strategy | Always send interface skeleton + full source file content. | 2026-02-20 |
-| D-014 | 4 | Dependency tracking | Forward dependencies only in Phase 4 (AST imports). Reverse dependency index deferred to Phase 5. | 2026-02-20 |
+| D-014 | 4 | Dependency tracking | Forward dependencies only in Phase 4 (AST imports). Reverse dependency index deferred (see Reverse Index phase). | 2026-02-20 |
 | D-015 | 4 | Change detection source | Read `StalenessMetadata` from design file HTML comment footer — no separate cache file. | 2026-02-20 |
 | D-016 | 4 | Archivist service placement | New `archivist/` module, separate from `llm/service.py`. | 2026-02-20 |
 | D-017 | 4 | Old BAML functions | Retire `SummarizeFile`, `SummarizeFilesBatch`, `SummarizeDirectory`. | 2026-02-20 |
@@ -806,6 +842,13 @@ Decisions made during implementation that refine the architecture above. Referen
 | D-042 | 6 | Downvotes require comment | CLI enforces `--comment` on `lexi stack vote <id> down`. Comment appended with `[downvote]` context. | 2026-02-21 |
 | D-043 | 6 | Wikilink pattern for Stack | `[[ST-NNN]]` format. Resolver extended to recognise `ST-NNN` alongside concept names. | 2026-02-21 |
 | D-044 | 6 | Bead integration | Optional `bead` field in post frontmatter. No hard dependency on Beads. | 2026-02-21 |
+| D-045 | 7 | Validate severity tiers | Validation issues grouped into three tiers: **error** (broken references, missing files), **warning** (stale hashes, token budget violations, orphan concepts), **info** (bidirectional gaps, potentially outdated Stack posts). | 2026-02-21 |
+| D-046 | 7 | `lexi status` output model | Compact summary: artifact counts by type, stale count, issue counts by severity, last update timestamp. Non-zero exit code when errors or warnings exist (enables hooks/CI). | 2026-02-21 |
+| D-047 | 7 | Validate is read-only | `lexi validate` never modifies files. Reports issues only. Fixes via `lexi update`, agent edits, or future `--fix` flag. | 2026-02-21 |
+| D-048 | 7 | Bidirectional consistency — deferred scope | Full bidirectional validation requires the reverse dependency index (not yet implemented). Phase 7 validates forward direction only: files in `## Dependencies` must exist. Reverse check deferred to Reverse Index phase. | 2026-02-21 |
+| D-049 | 7 | Local Conventions — future structural upgrade | Current `list[str]` model doesn't support titles, tags, or search. Future phase upgrades to structured model with search integration and agent-friendly creation workflow. See Q-004. | 2026-02-21 |
+| D-050 | 7 | `lexi lookup` convention inheritance | `lexi lookup <file>` appends applicable Local Conventions by walking up parent `.aindex` files. Surfaces scoped conventions at the moment of highest agent attention. | 2026-02-21 |
+| D-051 | 7 | Maintenance service pattern | Library health (`lexi validate`, `lexi status`) is a maintenance concern, not a coding workflow concern. Coding agents use read/write-back operations; maintenance is handled by dedicated service, CI, or scheduled process. | 2026-02-21 |
 
 ### Open Questions
 
@@ -814,3 +857,4 @@ Decisions made during implementation that refine the architecture above. Referen
 | Q-001 | 2+ | How should `lexi update` preserve agent/human-authored Local Conventions when regenerating `.aindex`? Options: parse-and-reinject vs. treat as untouchable section. | Open |
 | Q-002 | 4 | When LLM enrichment replaces structural descriptions, should change detection use directory listing hash or composite hash? | Resolved — D-022/D-023: `.aindex` file descriptions are extracted from design file frontmatter (not regenerated by LLM). Directory descriptions are written once. `lexi update` refreshes individual Child Map entries, not the whole `.aindex`. |
 | Q-003 | 4 | Should `lexi update` on a single file also update the parent directory's `.aindex`? | Resolved — D-023: Yes, refresh the parent `.aindex` Child Map entry with the description from the design file's YAML frontmatter. |
+| Q-004 | 7+ | Local Conventions in `.aindex` files need a structural upgrade to become first-class searchable artifacts. Current `list[str]` model doesn't support titles, tags, concept links, or search integration. The solution must: (a) support structured convention metadata (title, tags, concept links), (b) be searchable via `lexi search`, (c) be easy for agents to add new conventions (e.g., `lexi convention add <dir> "..."`), (d) surface inherited conventions in `lexi lookup`, (e) survive `.aindex` regeneration (relates to Q-001). Requires `.aindex` format revision + search integration + creation workflow. | Open |

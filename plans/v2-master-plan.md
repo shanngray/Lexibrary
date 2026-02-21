@@ -92,16 +92,18 @@ Three-layer ignore: `.gitignore` + `.lexignore` + `config.ignore.additional_patt
 | 4 | Archivist | Design files, START_HERE.md, `lexi update` / `lexi lookup` | Phase 3 |
 | 5 | Concepts Wiki | Concept files, wikilink resolution, `lexi concepts` / `lexi concept new` | Phase 4 |
 | 6 | The Stack | Stack posts, voting, `lexi stack post` / `lexi stack search`, unified `lexi search` | Phase 5 (wikilink resolver) |
-| 7 | Validation & Search | `lexi validate`, `lexi status`, `lexi search` (unified) | Phases 4, 5, 6 |
+| 7 | Validation & Status | `lexi validate`, `lexi status`, `lexi lookup` convention inheritance | Phases 4, 5, 6 |
 | 8 | Agent Setup | `lexi setup`, env rules for Claude/Cursor/Codex | Phase 7 |
 | 9 | Daemon & CI | Auto-update on file change, git hooks | Phase 4 |
-| 10 | Query Index | SQLite optimisation (optional) | Phase 7 |
+| 10 | Reverse Dependency Index | Two-pass reverse-index build, design file `dependents` population, bidirectional validation | Phase 4 (forward deps) |
+| 11 | Query Index | SQLite optimisation (optional) | Phase 7 |
 
 **Critical path:** 1 → 3 → 4 → 7 → 8
 
 **Parallelisable pairs:**
 - Phase 2 (.aindex) can run alongside Phase 3 (AST)
 - Phase 5 (Concepts Wiki) and Phase 6 (The Stack) can run in parallel once Phase 4 is complete (Phase 6 depends on Phase 5's wikilink resolver but core model/parser work is independent)
+- Phase 10 (Reverse Index) can run alongside Phases 8 and 9 (no dependency between them)
 
 ---
 
@@ -422,7 +424,34 @@ The `daemon/watcher.py`, `debouncer.py`, and `scheduler.py` modules from v1 are 
 
 ---
 
-## Phase 10 — Query Index (Future / Optional)
+## Phase 10 — Reverse Dependency Index
+
+**Goal:** Build the project-wide reverse dependency index so that design file `dependents` fields are populated and bidirectional consistency validation becomes possible.
+
+### Two-Pass Process
+
+1. **Forward pass** — collect all forward dependencies from every design file (already populated by Phase 4's AST import extraction).
+2. **Reverse pass** — invert the dependency map to produce dependents for each file.
+
+The reverse index is built during `lexi update` and written back into design file `## Dependents` sections. The index is cached and updated incrementally when individual files change.
+
+### What This Enables
+
+- Design file `dependents` field populated (currently always empty)
+- `lexi validate` bidirectional consistency check (D-048 — currently deferred)
+- "What uses this file?" queries via `lexi search` or `lexi lookup`
+- Impact analysis: "if I change this file, what else might break?"
+
+### What to Watch Out For
+
+- Incremental updates: changing one file's imports should update both its own `dependencies` and all affected files' `dependents` without a full rebuild
+- Circular dependencies are valid (A imports B, B imports A) — report but don't error
+- External package imports (not project files) should not appear in the dependents index
+- The reverse index must survive partial updates — if only some files are re-analyzed, stale dependents entries from deleted files must be cleaned up
+
+---
+
+## Phase 11 — Query Index (Future / Optional)
 
 **Start with Option A (files-only).** Layer SQLite underneath if performance becomes an issue.
 
