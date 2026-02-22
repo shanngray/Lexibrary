@@ -12,7 +12,7 @@ src/lexibrarian/
 │   ├── __init__.py              ← Re-exports lexi_app and lexictl_app
 │   ├── _shared.py               ← Shared helpers: console, require_project_root(), stub()
 │   ├── lexi_app.py              ← Agent-facing CLI (lexi): lookup, index, describe, concepts, concept, stack, search
-│   └── lexictl_app.py           ← Maintenance CLI (lexictl): init, update, validate, status, setup (--update), daemon (stub)
+│   └── lexictl_app.py           ← Maintenance CLI (lexictl): init, update (--changed-only), validate, status, setup (--update, --hooks), sweep (--watch), daemon (start/stop/status)
 ├── exceptions.py                ← LexibraryNotFoundError
 ├── search.py                    ← unified_search() — cross-artifact search (concepts, design files, Stack posts)
 ├── archivist/                   ← LLM pipeline for design file + START_HERE generation (Phase 4)
@@ -52,12 +52,16 @@ src/lexibrarian/
 │   ├── discovery.py             ← Filesystem traversal + file enumeration
 │   ├── engine.py                ← full_crawl() orchestrator (partially broken — see blueprints)
 │   └── file_reader.py           ← Read source files for crawl input
-├── daemon/                      ← Watchdog file watcher + debouncer + periodic sweep
+├── daemon/                      ← Sweep + periodic watch + deprecated watchdog
 │   ├── __init__.py
 │   ├── debouncer.py             ← Coalesce rapid file-change events
+│   ├── logging.py               ← setup_daemon_logging() — RotatingFileHandler to .lexibrarian.log
 │   ├── scheduler.py             ← Periodic sweep scheduler
-│   ├── service.py               ← DaemonService — top-level watchdog coordinator
+│   ├── service.py               ← DaemonService — run_once, run_watch, run_watchdog entry points
 │   └── watcher.py               ← watchdog filesystem event handler
+├── hooks/                       ← Git hook installation for automatic updates
+│   ├── __init__.py
+│   └── post_commit.py           ← install_post_commit_hook() — git post-commit hook for lexictl update
 ├── ignore/                      ← pathspec-based ignore pattern matching
 │   ├── __init__.py
 │   ├── gitignore.py             ← Load + parse .gitignore files
@@ -107,10 +111,13 @@ src/lexibrarian/
 │   ├── base.py                  ← TokenCounter protocol
 │   ├── factory.py               ← Backend selection factory
 │   └── tiktoken_counter.py      ← tiktoken (OpenAI) backend
-├── utils/                       ← Hashing, language detection, logging, paths, root
+├── utils/                       ← Hashing, language detection, logging, paths, root, atomic writes, conflict detection, locks
 │   ├── __init__.py
+│   ├── atomic.py                ← atomic_write() — temp-file + os.replace() for safe writes
+│   ├── conflict.py              ← has_conflict_markers() — git merge conflict detection
 │   ├── hashing.py               ← hash_file() SHA-256 helper
 │   ├── languages.py             ← detect_language() by extension
+│   ├── locks.py                 ← DirectoryLockManager — per-directory threading.Lock instances
 │   ├── logging.py               ← setup_logging() rich handler
 │   ├── paths.py                 ← Path helpers for .lexibrary/ layout
 │   └── root.py                  ← find_project_root() — walks up to locate .lexibrary/
@@ -131,21 +138,22 @@ src/lexibrarian/
 
 | Package | Role |
 | --- | --- |
-| `cli` | Two Typer CLI apps: `lexi_app` (agent-facing: lookup, index, describe, concepts, concept, stack, search) and `lexictl_app` (maintenance: init, update, validate, status, setup, daemon); shared helpers in `_shared.py` (`console`, `require_project_root`, `stub`) |
-| `archivist` | LLM pipeline for design file + START_HERE generation: `ArchivistService`, `update_file`, `update_project`, `generate_start_here`, `check_change`, `extract_dependencies` |
+| `cli` | Two Typer CLI apps: `lexi_app` (agent-facing: lookup, index, describe, concepts, concept, stack, search) and `lexictl_app` (maintenance: init, update, validate, status, setup, sweep, daemon); shared helpers in `_shared.py` (`console`, `require_project_root`, `stub`) |
+| `archivist` | LLM pipeline for design file + START_HERE generation: `ArchivistService`, `update_file`, `update_files`, `update_project`, `generate_start_here`, `check_change`, `extract_dependencies`; safety features: conflict marker check, design hash TOCTOU re-check, atomic writes |
 | `artifacts` | Pydantic 2 models: `DesignFile`, `AIndexFile`, `ConceptFile`; plus parsers, serializers, writer |
 | `ast_parser` | Tree-sitter interface extraction: `parse_interface`, `compute_hashes`, `hash_interface`; `InterfaceSkeleton` model; Python / TypeScript / JavaScript parsers; `render_skeleton` canonical renderer |
 | `config` | `LexibraryConfig` schema (incl. `scope_root`, `ASTConfig`), two-tier YAML loader, default config template |
 | `crawler` | `full_crawl()` orchestrator; discovery, file reading, change detection (LLM-based; partially broken -- see crawler/engine.md) |
-| `daemon` | `DaemonService` -- watchdog + debounce + periodic sweep |
+| `daemon` | `DaemonService` -- three entry points: `run_once` (single sweep), `run_watch` (periodic), `run_watchdog` (deprecated); `setup_daemon_logging` for rotating file logging |
 | `ignore` | `IgnoreMatcher` combining `.gitignore` + config + `.lexignore` patterns via pathspec |
 | `indexer` | Structural `.aindex` pipeline: `generate_aindex` (with design file frontmatter lookup) -> `serialize_aindex` -> `write_artifact`; no LLM |
-| `init` | `create_lexibrary_skeleton()`, `create_lexibrary_from_wizard()` -- creates `.lexibrary/` + `.lexignore` on `lexictl init`; `detection.py` auto-discovers project name, scope roots, agent envs, LLM providers, project type; `wizard.py` runs 8-step interactive setup via `run_wizard()` → `WizardAnswers`; `rules/` subpackage generates agent environment files (Claude, Cursor, Codex) via `generate_rules()` |
+| `init` | `create_lexibrary_skeleton()`, `create_lexibrary_from_wizard()` -- creates `.lexibrary/` + `.lexignore` on `lexictl init`; ensures `.lexibrarian.log` and `.lexibrarian.pid` are gitignored; `detection.py` auto-discovers project name, scope roots, agent envs, LLM providers, project type; `wizard.py` runs 8-step interactive setup via `run_wizard()` → `WizardAnswers`; `rules/` subpackage generates agent environment files (Claude, Cursor, Codex) via `generate_rules()` |
 | `iwh` | IWH (I Was Here) ephemeral inter-agent signal files: `IWHFile` model, `parse_iwh`, `serialize_iwh`, `read_iwh`, `consume_iwh`, `write_iwh`; `ensure_iwh_gitignored()` for `.gitignore` integration |
 | `llm` | `LLMService` wrapping BAML client; `RateLimiter`; `create_llm_service()` factory |
 | `stack` | Stack Q&A knowledge base: `StackPost`, `StackIndex`, `parse_stack_post`, `serialize_stack_post`, `render_post_template`; mutations: `add_answer`, `record_vote`, `accept_answer`, `mark_duplicate`, `mark_outdated` |
 | `tokenizer` | `TokenCounter` protocol; tiktoken / anthropic / approximate backends |
-| `utils` | `hash_file`, `detect_language`, `setup_logging`, `find_project_root`, path helpers |
+| `hooks` | Git hook installation: `install_post_commit_hook` for automatic `lexictl update --changed-only` after commits |
+| `utils` | `hash_file`, `detect_language`, `setup_logging`, `find_project_root`, path helpers, `atomic_write` (safe file writes), `has_conflict_markers` (git conflict detection), `DirectoryLockManager` (per-directory locks) |
 | `validator` | `validate_library()` orchestrator; `AVAILABLE_CHECKS` registry; `ValidationReport`, `ValidationIssue`, `ValidationSummary` models; 10 individual checks grouped by severity (error: wikilink_resolution, file_existence, concept_frontmatter; warning: hash_freshness, token_budgets, orphan_concepts, deprecated_concept_usage; info: forward_dependencies, stack_staleness, aindex_coverage) |
 | `wiki` | `ConceptIndex` (search/retrieval by title, alias, tag, substring); `parse_concept_file`; `serialize_concept_file`; `WikilinkResolver` (`ResolvedLink`, `UnresolvedLink`); `render_concept_template`, `concept_file_path` |
 | `search` | `unified_search()` — cross-artifact search across concepts, design files, and Stack posts; `SearchResults` with Rich rendering |
@@ -170,7 +178,12 @@ src/lexibrarian/
 | Change artifact data models | `blueprints/src/lexibrarian/artifacts/` |
 | Change `.aindex` file format | `blueprints/src/lexibrarian/artifacts/aindex_serializer.md` + `aindex_parser.md` |
 | Change design file format | `blueprints/src/lexibrarian/artifacts/design_file_serializer.md` + `design_file_parser.md` |
-| Modify daemon behavior | `blueprints/src/lexibrarian/daemon/` |
+| Modify daemon behavior | `blueprints/src/lexibrarian/daemon/service.md` |
+| Modify daemon logging | `blueprints/src/lexibrarian/daemon/logging.md` |
+| Install or modify git hooks | `blueprints/src/lexibrarian/hooks/post_commit.md` |
+| Modify atomic file writes | `blueprints/src/lexibrarian/utils/atomic.md` |
+| Modify conflict marker detection | `blueprints/src/lexibrarian/utils/conflict.md` |
+| Modify directory locking | `blueprints/src/lexibrarian/utils/locks.md` |
 | Add a tokenizer backend | `blueprints/src/lexibrarian/tokenizer/` |
 | Change `lexictl init` scaffolding | `blueprints/src/lexibrarian/init/scaffolder.md` |
 | Modify project auto-detection | `blueprints/src/lexibrarian/init/detection.md` |

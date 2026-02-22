@@ -92,13 +92,7 @@ class TestConsumeIWH:
 
     def test_consume_missing_scope_still_deletes(self, tmp_path: Path) -> None:
         iwh_path = tmp_path / ".iwh"
-        content = (
-            "---\n"
-            "author: agent-abc\n"
-            "created: '2026-02-22T14:30:00+00:00'\n"
-            "---\n"
-            "Body\n"
-        )
+        content = "---\nauthor: agent-abc\ncreated: '2026-02-22T14:30:00+00:00'\n---\nBody\n"
         iwh_path.write_text(content, encoding="utf-8")
         result = consume_iwh(tmp_path)
         assert result is None

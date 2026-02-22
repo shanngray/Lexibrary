@@ -36,9 +36,7 @@ def ensure_iwh_gitignored(project_root: Path) -> bool:
 
     if gitignore_path.exists():
         content = gitignore_path.read_text(encoding="utf-8")
-        existing_patterns = {
-            line.strip() for line in content.splitlines() if line.strip()
-        }
+        existing_patterns = {line.strip() for line in content.splitlines() if line.strip()}
 
         # Check if any equivalent pattern is already present
         if existing_patterns & _ALTERNATIVE_PATTERNS:

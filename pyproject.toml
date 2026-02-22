@@ -72,10 +72,6 @@ ignore_missing_imports = true
 module = "lexibrarian.crawler.engine"
 ignore_errors = true
 
-[[tool.mypy.overrides]]
-module = "lexibrarian.daemon.service"
-ignore_errors = true
-
 # tree-sitter grammar packages are C extensions without type stubs
 [[tool.mypy.overrides]]
 module = [

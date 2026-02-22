@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from lexibrarian.iwh import parse_iwh
@@ -48,13 +48,7 @@ class TestParseIWH:
         assert result is None
 
     def test_missing_scope_field_returns_none(self, tmp_path: Path) -> None:
-        content = (
-            "---\n"
-            "author: agent-abc\n"
-            "created: '2026-02-22T14:30:00+00:00'\n"
-            "---\n"
-            "Body\n"
-        )
+        content = "---\nauthor: agent-abc\ncreated: '2026-02-22T14:30:00+00:00'\n---\nBody\n"
         iwh_path = self._write_iwh(tmp_path / ".iwh", content)
         result = parse_iwh(iwh_path)
         assert result is None
@@ -74,11 +68,7 @@ class TestParseIWH:
 
     def test_empty_body_parsed_correctly(self, tmp_path: Path) -> None:
         content = (
-            "---\n"
-            "author: agent-abc\n"
-            "created: '2026-02-22T14:30:00+00:00'\n"
-            "scope: warning\n"
-            "---\n"
+            "---\nauthor: agent-abc\ncreated: '2026-02-22T14:30:00+00:00'\nscope: warning\n---\n"
         )
         iwh_path = self._write_iwh(tmp_path / ".iwh", content)
         result = parse_iwh(iwh_path)
@@ -116,11 +106,7 @@ class TestParseIWH:
 
     def test_created_is_datetime(self, tmp_path: Path) -> None:
         content = (
-            "---\n"
-            "author: agent-abc\n"
-            "created: '2026-02-22T14:30:00+00:00'\n"
-            "scope: warning\n"
-            "---\n"
+            "---\nauthor: agent-abc\ncreated: '2026-02-22T14:30:00+00:00'\nscope: warning\n---\n"
         )
         iwh_path = self._write_iwh(tmp_path / ".iwh", content)
         result = parse_iwh(iwh_path)

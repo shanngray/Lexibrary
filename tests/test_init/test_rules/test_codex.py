@@ -7,7 +7,6 @@ from pathlib import Path
 from lexibrarian.init.rules.codex import generate_codex_rules
 from lexibrarian.init.rules.markers import MARKER_END, MARKER_START
 
-
 # ---------------------------------------------------------------------------
 # Create from scratch
 # ---------------------------------------------------------------------------
@@ -128,11 +127,7 @@ class TestUpdateExistingSection:
         """Content before and after the marker block is preserved."""
         agents_md = tmp_path / "AGENTS.md"
         old_content = (
-            f"# Custom Header\n\n"
-            f"{MARKER_START}\n"
-            f"old stuff\n"
-            f"{MARKER_END}\n\n"
-            f"# Custom Footer"
+            f"# Custom Header\n\n{MARKER_START}\nold stuff\n{MARKER_END}\n\n# Custom Footer"
         )
         agents_md.write_text(old_content, encoding="utf-8")
 

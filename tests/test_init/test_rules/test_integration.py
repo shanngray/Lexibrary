@@ -305,10 +305,7 @@ class TestUserContentPreservation:
     def test_claude_preserves_user_content_below_markers(self, tmp_path: Path) -> None:
         """User content after the Lexibrarian section in CLAUDE.md is preserved."""
         claude_md = tmp_path / "CLAUDE.md"
-        initial = (
-            f"{MARKER_START}\nold rules\n{MARKER_END}\n\n"
-            f"# My Footer\n\nKeep this section.\n"
-        )
+        initial = f"{MARKER_START}\nold rules\n{MARKER_END}\n\n# My Footer\n\nKeep this section.\n"
         claude_md.write_text(initial, encoding="utf-8")
 
         generate_rules(tmp_path, ["claude"])

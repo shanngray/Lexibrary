@@ -77,31 +77,40 @@ _CORE_RULES = """
 
 ## Before Editing Files
 
-- Run `lexi lookup <file>` before editing any source file to understand its role, dependencies, and conventions.
+- Run `lexi lookup <file>` before editing any source file to understand
+  its role, dependencies, and conventions.
 - Read the corresponding design file in `.lexibrary/` if one exists.
 
 ## After Editing Files
 
-- Update the corresponding design file to reflect your changes. Set `updated_by: agent` in the frontmatter.
+- Update the corresponding design file to reflect your changes.
+  Set `updated_by: agent` in the frontmatter.
 
 ## Architectural Decisions
 
-- Run `lexi concepts <topic>` before making architectural decisions to check for existing project conventions and concepts.
+- Run `lexi concepts <topic>` before making architectural decisions
+  to check for existing project conventions and concepts.
 
 ## Debugging and Problem Solving
 
-- Run `lexi stack search <query>` before starting to debug an issue — a solution may already exist.
-- After solving a non-trivial bug, run `lexi stack post` to document the problem and solution for future reference.
+- Run `lexi stack search <query>` before starting to debug an issue
+  -- a solution may already exist.
+- After solving a non-trivial bug, run `lexi stack post` to document
+  the problem and solution for future reference.
 
 ## Leaving Work Incomplete
 
-- If you must stop before completing a task, create an `.iwh` file in the relevant directory describing the incomplete work and next steps.
+- If you must stop before completing a task, create an `.iwh` file
+  in the relevant directory describing the incomplete work and next
+  steps.
 - Do NOT create an `.iwh` file if all work is clean and complete.
 
 ## Prohibited Commands
 
-- Never run `lexictl` commands. These are maintenance-only operations reserved for project administrators.
-  - Do not run `lexictl update`, `lexictl validate`, `lexictl status`, `lexictl init`, or any other `lexictl` subcommand.
+- Never run `lexictl` commands. These are maintenance-only operations
+  reserved for project administrators.
+  - Do not run `lexictl update`, `lexictl validate`, `lexictl status`,
+    `lexictl init`, or any other `lexictl` subcommand.
   - Use only `lexi` commands for your work.
 """
 
@@ -112,7 +121,8 @@ Orientate yourself in this Lexibrarian-managed project.
 
 ## Steps
 
-1. Read `.lexibrary/START_HERE.md` to understand the project layout, package map, and navigation protocol.
+1. Read `.lexibrary/START_HERE.md` to understand the project layout,
+   package map, and navigation protocol.
 2. Check for `.lexibrary/.iwh` — if present, read it, follow any instructions, then delete the file.
 3. Run `lexi status` to see a summary of library health, including design file counts and staleness.
 """

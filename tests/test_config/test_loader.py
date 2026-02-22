@@ -49,8 +49,7 @@ def test_load_config_project_overrides_global(tmp_path: Path) -> None:
     """Project config top-level keys override global config."""
     global_cfg = tmp_path / "global.yaml"
     global_cfg.write_text(
-        "llm:\n  provider: openai\n  model: gpt-4o\n"
-        "daemon:\n  debounce_seconds: 5.0\n"
+        "llm:\n  provider: openai\n  model: gpt-4o\ndaemon:\n  debounce_seconds: 5.0\n"
     )
 
     (tmp_path / ".lexibrary").mkdir()

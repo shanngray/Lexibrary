@@ -33,6 +33,7 @@ class TestHelp:
             "validate",
             "status",
             "setup",
+            "sweep",
             "daemon",
         ):
             assert cmd in result.output
@@ -1001,9 +1002,7 @@ class TestSetupCommand:
         (tmp_path / ".lexibrary").mkdir()
         (tmp_path / ".lexibrary" / "config.yaml").write_text("scope_root: .\n")
 
-        result = self._invoke(
-            tmp_path, ["setup", "--update", "--env", "claude", "--env", "codex"]
-        )
+        result = self._invoke(tmp_path, ["setup", "--update", "--env", "claude", "--env", "codex"])
         assert result.exit_code == 0  # type: ignore[union-attr]
         output = result.output  # type: ignore[union-attr]
         assert "claude" in output
@@ -1013,15 +1012,14 @@ class TestSetupCommand:
 
 
 # ---------------------------------------------------------------------------
-# Stub commands — should exit 0 with "Not yet implemented" when .lexibrary/ exists
+# Update --changed-only tests
 # ---------------------------------------------------------------------------
 
 
-class TestStubCommands:
-    """Remaining stub commands print stub and exit 0 with project root."""
+class TestUpdateChangedOnly:
+    """Tests for the ``--changed-only`` flag on ``lexictl update``."""
 
-    def _invoke_in_project(self, tmp_path: Path, args: list[str]) -> object:
-        (tmp_path / ".lexibrary").mkdir(exist_ok=True)
+    def _invoke(self, tmp_path: Path, args: list[str]) -> object:
         old_cwd = os.getcwd()
         os.chdir(tmp_path)
         try:
@@ -1029,10 +1027,313 @@ class TestStubCommands:
         finally:
             os.chdir(old_cwd)
 
-    def test_daemon_stub(self, tmp_path: Path) -> None:
-        result = self._invoke_in_project(tmp_path, ["daemon"])
+    def test_changed_only_calls_update_files(self, tmp_path: Path) -> None:
+        """--changed-only passes resolved paths to update_files()."""
+        project = _setup_archivist_project(tmp_path)
+        mock_stats = UpdateStats(files_scanned=1, files_updated=1)
+        mock_update_files = AsyncMock(return_value=mock_stats)
+
+        with patch(
+            "lexibrarian.archivist.pipeline.update_files",
+            mock_update_files,
+        ):
+            result = self._invoke(project, ["update", "--changed-only", "src/main.py"])
+
         assert result.exit_code == 0  # type: ignore[union-attr]
-        assert "Not yet implemented" in result.output  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "1" in output
+        assert "Update summary" in output
+        mock_update_files.assert_called_once()
+
+    def test_changed_only_multiple_files(self, tmp_path: Path) -> None:
+        """--changed-only accepts multiple file paths."""
+        project = _setup_archivist_project(tmp_path)
+        mock_stats = UpdateStats(files_scanned=2, files_updated=2)
+        mock_update_files = AsyncMock(return_value=mock_stats)
+
+        with patch(
+            "lexibrarian.archivist.pipeline.update_files",
+            mock_update_files,
+        ):
+            result = self._invoke(
+                project,
+                ["update", "--changed-only", "src/main.py", "--changed-only", "src/utils.py"],
+            )
+
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        mock_update_files.assert_called_once()
+        # Verify two paths were passed
+        call_args = mock_update_files.call_args
+        assert len(call_args[0][0]) == 2  # first positional arg is the list of paths
+
+    def test_changed_only_mutual_exclusivity(self, tmp_path: Path) -> None:
+        """path and --changed-only cannot be used together."""
+        project = _setup_archivist_project(tmp_path)
+        result = self._invoke(project, ["update", "src/main.py", "--changed-only", "src/utils.py"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "mutually exclusive" in output
+
+    def test_changed_only_with_failures_exits_1(self, tmp_path: Path) -> None:
+        """--changed-only exits 1 when files_failed > 0."""
+        project = _setup_archivist_project(tmp_path)
+        mock_stats = UpdateStats(files_scanned=1, files_failed=1)
+        mock_update_files = AsyncMock(return_value=mock_stats)
+
+        with patch(
+            "lexibrarian.archivist.pipeline.update_files",
+            mock_update_files,
+        ):
+            result = self._invoke(project, ["update", "--changed-only", "src/main.py"])
+
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "failed" in output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Sweep command tests
+# ---------------------------------------------------------------------------
+
+
+class TestSweepCommand:
+    """Tests for the ``lexictl sweep`` command."""
+
+    def _invoke(self, tmp_path: Path, args: list[str]) -> object:
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return runner.invoke(lexictl_app, args)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_sweep_one_shot_calls_run_once(self, tmp_path: Path) -> None:
+        """``lexictl sweep`` invokes DaemonService.run_once()."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+
+        with patch("lexibrarian.daemon.service.DaemonService") as mock_cls:
+            mock_svc = mock_cls.return_value
+            result = self._invoke(tmp_path, ["sweep"])
+
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        mock_svc.run_once.assert_called_once()
+        mock_svc.run_watch.assert_not_called()
+
+    def test_sweep_watch_calls_run_watch(self, tmp_path: Path) -> None:
+        """``lexictl sweep --watch`` invokes DaemonService.run_watch()."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+
+        with patch("lexibrarian.daemon.service.DaemonService") as mock_cls:
+            mock_svc = mock_cls.return_value
+            result = self._invoke(tmp_path, ["sweep", "--watch"])
+
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        mock_svc.run_watch.assert_called_once()
+        mock_svc.run_once.assert_not_called()
+
+    def test_sweep_no_project_exits_1(self, tmp_path: Path) -> None:
+        """sweep without .lexibrary/ exits 1."""
+        result = self._invoke(tmp_path, ["sweep"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "No .lexibrary/" in result.output  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# Setup --hooks tests
+# ---------------------------------------------------------------------------
+
+
+class TestSetupHooks:
+    """Tests for the ``--hooks`` flag on ``lexictl setup``."""
+
+    def _invoke(self, tmp_path: Path, args: list[str]) -> object:
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return runner.invoke(lexictl_app, args)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_setup_hooks_installs_hook(self, tmp_path: Path) -> None:
+        """``setup --hooks`` installs the post-commit hook."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+        (tmp_path / ".git" / "hooks").mkdir(parents=True)
+
+        result = self._invoke(tmp_path, ["setup", "--hooks"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "installed" in output.lower()
+        # Hook file should exist
+        assert (tmp_path / ".git" / "hooks" / "post-commit").exists()
+
+    def test_setup_hooks_idempotent(self, tmp_path: Path) -> None:
+        """``setup --hooks`` twice reports already installed."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+        (tmp_path / ".git" / "hooks").mkdir(parents=True)
+
+        # Install once
+        self._invoke(tmp_path, ["setup", "--hooks"])
+        # Install again
+        result = self._invoke(tmp_path, ["setup", "--hooks"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "already installed" in output.lower()
+
+    def test_setup_hooks_no_git_dir(self, tmp_path: Path) -> None:
+        """``setup --hooks`` without .git exits 1."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+
+        result = self._invoke(tmp_path, ["setup", "--hooks"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "No .git" in output or "no git" in output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Daemon command tests (start/stop/status)
+# ---------------------------------------------------------------------------
+
+
+class TestDaemonCommand:
+    """Tests for the ``lexictl daemon`` command (start/stop/status)."""
+
+    def _invoke(self, tmp_path: Path, args: list[str]) -> object:
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            return runner.invoke(lexictl_app, args)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_daemon_start_watchdog_disabled(self, tmp_path: Path) -> None:
+        """``daemon start`` when watchdog_enabled is False shows message."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+
+        result = self._invoke(tmp_path, ["daemon", "start"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "disabled" in output.lower()
+        assert "sweep --watch" in output
+
+    def test_daemon_default_action_is_start(self, tmp_path: Path) -> None:
+        """``daemon`` with no action defaults to start."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+
+        result = self._invoke(tmp_path, ["daemon"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        # Default is start; with watchdog disabled, should suggest sweep
+        assert "disabled" in output.lower()
+
+    def test_daemon_unknown_action(self, tmp_path: Path) -> None:
+        """``daemon foo`` exits 1 with error about valid actions."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+
+        result = self._invoke(tmp_path, ["daemon", "foo"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "Unknown action" in output
+        assert "start" in output
+        assert "stop" in output
+        assert "status" in output
+
+    def test_daemon_stop_no_pid_file(self, tmp_path: Path) -> None:
+        """``daemon stop`` with no PID file shows no daemon running."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+
+        result = self._invoke(tmp_path, ["daemon", "stop"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "No daemon" in output or "no PID" in output.lower()
+
+    def test_daemon_stop_sends_sigterm(self, tmp_path: Path) -> None:
+        """``daemon stop`` reads PID and sends SIGTERM."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+        (tmp_path / ".lexibrarian.pid").write_text("12345")
+
+        with patch("os.kill") as mock_kill:
+            result = self._invoke(tmp_path, ["daemon", "stop"])
+
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "SIGTERM" in output
+        assert "12345" in output
+        mock_kill.assert_called_once()
+
+    def test_daemon_stop_stale_pid(self, tmp_path: Path) -> None:
+        """``daemon stop`` with stale PID cleans up PID file."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+        (tmp_path / ".lexibrarian.pid").write_text("99999")
+
+        with patch(
+            "os.kill",
+            side_effect=ProcessLookupError,
+        ):
+            result = self._invoke(tmp_path, ["daemon", "stop"])
+
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "not found" in output.lower() or "stale" in output.lower()
+        # PID file should be cleaned up
+        assert not (tmp_path / ".lexibrarian.pid").exists()
+
+    def test_daemon_status_no_pid_file(self, tmp_path: Path) -> None:
+        """``daemon status`` with no PID file shows no daemon running."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+
+        result = self._invoke(tmp_path, ["daemon", "status"])
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "No daemon" in output or "not running" in output.lower()
+
+    def test_daemon_status_running(self, tmp_path: Path) -> None:
+        """``daemon status`` with valid PID reports running."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+        (tmp_path / ".lexibrarian.pid").write_text("12345")
+
+        with patch("os.kill"):
+            result = self._invoke(tmp_path, ["daemon", "status"])
+
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "running" in output.lower()
+        assert "12345" in output
+
+    def test_daemon_status_stale_pid(self, tmp_path: Path) -> None:
+        """``daemon status`` with stale PID cleans up."""
+        (tmp_path / ".lexibrary").mkdir()
+        (tmp_path / ".lexibrary" / "config.yaml").write_text("")
+        (tmp_path / ".lexibrarian.pid").write_text("99999")
+
+        with patch(
+            "os.kill",
+            side_effect=ProcessLookupError,
+        ):
+            result = self._invoke(tmp_path, ["daemon", "status"])
+
+        assert result.exit_code == 0  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "Stale" in output or "stale" in output.lower()
+        assert not (tmp_path / ".lexibrarian.pid").exists()
+
+    def test_daemon_no_project_root(self, tmp_path: Path) -> None:
+        """daemon without .lexibrary/ exits 1."""
+        result = self._invoke(tmp_path, ["daemon"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "No .lexibrary/" in result.output  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------
@@ -1066,5 +1367,10 @@ class TestNoProjectRoot:
 
     def test_update_no_project_root(self, tmp_path: Path) -> None:
         result = self._invoke_without_project(tmp_path, ["update"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        assert "No .lexibrary/" in result.output  # type: ignore[union-attr]
+
+    def test_sweep_no_project_root(self, tmp_path: Path) -> None:
+        result = self._invoke_without_project(tmp_path, ["sweep"])
         assert result.exit_code == 1  # type: ignore[union-attr]
         assert "No .lexibrary/" in result.output  # type: ignore[union-attr]

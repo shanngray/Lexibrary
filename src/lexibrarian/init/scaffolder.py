@@ -16,6 +16,9 @@ if TYPE_CHECKING:
 
 LEXIBRARY_DIR = ".lexibrary"
 
+# Patterns for daemon runtime files that should be gitignored.
+_DAEMON_GITIGNORE_PATTERNS = [".lexibrarian.log", ".lexibrarian.pid"]
+
 LEXIGNORE_HEADER = """\
 # .lexignore — Lexibrarian-specific ignore patterns
 # Files matching these patterns will NOT receive design files, even if tracked by git.
@@ -102,6 +105,40 @@ def _generate_config_yaml(answers: WizardAnswers) -> str:
     )
 
 
+def _ensure_daemon_files_gitignored(project_root: Path) -> bool:
+    """Ensure daemon runtime files are listed in ``.gitignore``.
+
+    Appends ``.lexibrarian.log`` and ``.lexibrarian.pid`` to the project's
+    ``.gitignore`` if they are not already present.  Creates the
+    ``.gitignore`` file if it does not exist.
+
+    Args:
+        project_root: Root directory of the project.
+
+    Returns:
+        ``True`` if the file was modified (or created), ``False`` if all
+        patterns were already present.
+    """
+    gitignore_path = project_root / ".gitignore"
+
+    if gitignore_path.exists():
+        content = gitignore_path.read_text(encoding="utf-8")
+        existing_patterns = {line.strip() for line in content.splitlines() if line.strip()}
+    else:
+        content = ""
+        existing_patterns = set()
+
+    missing = [p for p in _DAEMON_GITIGNORE_PATTERNS if p not in existing_patterns]
+    if not missing:
+        return False
+
+    if content and not content.endswith("\n"):
+        content += "\n"
+    content += "\n".join(missing) + "\n"
+    gitignore_path.write_text(content, encoding="utf-8")
+    return True
+
+
 def create_lexibrary_skeleton(project_root: Path) -> list[Path]:
     """Create the ``.lexibrary/`` directory skeleton at *project_root*.
 
@@ -141,6 +178,9 @@ def create_lexibrary_skeleton(project_root: Path) -> list[Path]:
 
     # Ensure .iwh files are gitignored
     ensure_iwh_gitignored(project_root)
+
+    # Ensure daemon runtime files are gitignored
+    _ensure_daemon_files_gitignored(project_root)
 
     return created
 
@@ -197,5 +237,8 @@ def create_lexibrary_from_wizard(
 
     # Ensure .iwh files are gitignored
     ensure_iwh_gitignored(project_root)
+
+    # Ensure daemon runtime files are gitignored
+    _ensure_daemon_files_gitignored(project_root)
 
     return created

@@ -7,7 +7,7 @@ from typing import Annotated
 
 import typer
 
-from lexibrarian.cli._shared import console, require_project_root, stub
+from lexibrarian.cli._shared import console, require_project_root
 
 lexictl_app = typer.Typer(
     name="lexictl",
@@ -83,6 +83,14 @@ def update(
         Path | None,
         typer.Argument(help="File or directory to update. Omit to update entire project."),
     ] = None,
+    *,
+    changed_only: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--changed-only",
+            help="Only update the specified files (for git hooks / CI).",
+        ),
+    ] = None,
 ) -> None:
     """Re-index changed files and regenerate design files."""
     import asyncio  # noqa: PLC0415
@@ -92,16 +100,46 @@ def update(
     from lexibrarian.archivist.pipeline import (  # noqa: PLC0415
         UpdateStats,
         update_file,
+        update_files,
         update_project,
     )
     from lexibrarian.archivist.service import ArchivistService  # noqa: PLC0415
     from lexibrarian.config.loader import load_config  # noqa: PLC0415
     from lexibrarian.llm.rate_limiter import RateLimiter  # noqa: PLC0415
 
+    # Mutual exclusivity check
+    if path is not None and changed_only is not None:
+        console.print(
+            "[red]Error:[/red] [cyan]path[/cyan] and [cyan]--changed-only[/cyan]"
+            " are mutually exclusive. Use one or the other."
+        )
+        raise typer.Exit(1)
+
     project_root = require_project_root()
     config = load_config(project_root)
     rate_limiter = RateLimiter()
     archivist = ArchivistService(rate_limiter=rate_limiter, config=config.llm)
+
+    # --changed-only: batch update specific files
+    if changed_only is not None:
+        resolved_paths = [p.resolve() for p in changed_only]
+        console.print(f"Updating [cyan]{len(resolved_paths)}[/cyan] changed file(s)...")
+
+        stats = asyncio.run(update_files(resolved_paths, project_root, config, archivist))
+
+        console.print()
+        console.print("[bold]Update summary:[/bold]")
+        console.print(f"  Files scanned:       {stats.files_scanned}")
+        console.print(f"  Files unchanged:     {stats.files_unchanged}")
+        console.print(f"  Files created:       {stats.files_created}")
+        console.print(f"  Files updated:       {stats.files_updated}")
+        console.print(f"  Files agent-updated: {stats.files_agent_updated}")
+        if stats.files_failed:
+            console.print(f"  [red]Files failed:       {stats.files_failed}[/red]")
+
+        if stats.files_failed:
+            raise typer.Exit(1)
+        return
 
     if path is not None:
         target = Path(path).resolve()
@@ -434,7 +472,7 @@ def status(
 
 
 # ---------------------------------------------------------------------------
-# Stub commands
+# setup / sweep / daemon
 # ---------------------------------------------------------------------------
 
 
@@ -449,8 +487,26 @@ def setup(
         list[str] | None,
         typer.Option("--env", help="Explicit environment(s) to generate rules for."),
     ] = None,
+    hooks: Annotated[
+        bool,
+        typer.Option("--hooks", help="Install the git post-commit hook for automatic updates."),
+    ] = False,
 ) -> None:
     """Install or update agent environment rules."""
+    if hooks:
+        from lexibrarian.hooks.post_commit import install_post_commit_hook  # noqa: PLC0415
+
+        project_root = require_project_root()
+        result = install_post_commit_hook(project_root)
+        if result.no_git_dir:
+            console.print(f"[red]{result.message}[/red]")
+            raise typer.Exit(1)
+        if result.already_installed:
+            console.print(f"[yellow]{result.message}[/yellow]")
+        else:
+            console.print(f"[green]{result.message}[/green]")
+        return
+
     if not update_flag:
         console.print(
             "Usage:\n"
@@ -507,11 +563,107 @@ def setup(
 
 
 @lexictl_app.command()
+def sweep(
+    *,
+    watch: Annotated[
+        bool,
+        typer.Option("--watch", help="Run periodic sweeps in the foreground until interrupted."),
+    ] = False,
+) -> None:
+    """Run a library update sweep (one-shot or watch mode)."""
+    from lexibrarian.daemon.service import DaemonService  # noqa: PLC0415
+
+    project_root = require_project_root()
+    svc = DaemonService(project_root)
+
+    if watch:
+        svc.run_watch()
+    else:
+        svc.run_once()
+
+
+@lexictl_app.command()
 def daemon(
-    path: Annotated[
-        Path | None,
-        typer.Argument(help="Project directory to watch."),
+    action: Annotated[
+        str | None,
+        typer.Argument(help="Action to perform: start, stop, or status."),
     ] = None,
 ) -> None:
-    """Start the background file watcher daemon."""
-    stub("daemon")
+    """Manage the watchdog daemon (deprecated -- prefer 'sweep')."""
+    import os  # noqa: PLC0415
+    import signal as _signal  # noqa: PLC0415
+
+    from lexibrarian.config.loader import load_config  # noqa: PLC0415
+    from lexibrarian.daemon.service import DaemonService  # noqa: PLC0415
+
+    project_root = require_project_root()
+    resolved_action = action or "start"
+    valid_actions = ("start", "stop", "status")
+
+    if resolved_action not in valid_actions:
+        console.print(
+            f"[red]Unknown action:[/red] {resolved_action}\n"
+            f"Valid actions: {', '.join(valid_actions)}"
+        )
+        raise typer.Exit(1)
+
+    pid_path = project_root / ".lexibrarian.pid"
+
+    if resolved_action == "start":
+        config = load_config(project_root)
+        if not config.daemon.watchdog_enabled:
+            console.print(
+                "[yellow]Watchdog mode is disabled in config.[/yellow]\n"
+                "Use [cyan]lexictl sweep --watch[/cyan] for periodic sweeps, "
+                "or set [cyan]daemon.watchdog_enabled: true[/cyan] in config."
+            )
+            return
+        svc = DaemonService(project_root)
+        svc.run_watchdog()
+
+    elif resolved_action == "stop":
+        if not pid_path.exists():
+            console.print("[yellow]No daemon is running (no PID file found).[/yellow]")
+            return
+        try:
+            pid = int(pid_path.read_text(encoding="utf-8").strip())
+        except (ValueError, OSError):
+            console.print("[red]Cannot read PID file.[/red]")
+            pid_path.unlink(missing_ok=True)
+            raise typer.Exit(1) from None
+
+        try:
+            os.kill(pid, _signal.SIGTERM)
+            console.print(f"[green]Sent SIGTERM to daemon (PID {pid}).[/green]")
+        except ProcessLookupError:
+            console.print(
+                f"[yellow]Process {pid} not found -- cleaning up stale PID file.[/yellow]"
+            )
+            pid_path.unlink(missing_ok=True)
+        except PermissionError:
+            console.print(f"[red]Permission denied sending signal to PID {pid}.[/red]")
+            raise typer.Exit(1) from None
+
+    elif resolved_action == "status":
+        if not pid_path.exists():
+            console.print("[dim]No daemon is running.[/dim]")
+            return
+        try:
+            pid = int(pid_path.read_text(encoding="utf-8").strip())
+        except (ValueError, OSError):
+            console.print("[red]Cannot read PID file.[/red]")
+            pid_path.unlink(missing_ok=True)
+            raise typer.Exit(1) from None
+
+        # Check if process is still running
+        try:
+            os.kill(pid, 0)
+            console.print(f"[green]Daemon is running[/green] (PID {pid}).")
+        except ProcessLookupError:
+            console.print(
+                f"[yellow]Stale PID file found (PID {pid} is not running).[/yellow] Cleaning up."
+            )
+            pid_path.unlink(missing_ok=True)
+        except PermissionError:
+            # Process exists but we can't signal it -- it's running
+            console.print(f"[green]Daemon is running[/green] (PID {pid}).")

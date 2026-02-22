@@ -1,16 +1,17 @@
 # init/scaffolder
 
-**Summary:** Creates the `.lexibrary/` directory skeleton and `.lexignore` file idempotently -- never overwrites existing files. Supports both static template creation and wizard-driven dynamic generation. Ensures `.iwh` files are gitignored on every init.
+**Summary:** Creates the `.lexibrary/` directory skeleton and `.lexignore` file idempotently -- never overwrites existing files. Supports both static template creation and wizard-driven dynamic generation. Ensures `.iwh` files and daemon runtime files (`.lexibrarian.log`, `.lexibrarian.pid`) are gitignored on every init.
 
 ## Interface
 
 | Name | Signature | Purpose |
 | --- | --- | --- |
-| `create_lexibrary_skeleton` | `(project_root: Path) -> list[Path]` | Create dirs (`concepts/`, `stack/`), `.gitkeep` files, template files (`config.yaml`, `START_HERE.md`), and `.lexignore`; call `ensure_iwh_gitignored()`; return list of paths created |
-| `create_lexibrary_from_wizard` | `(project_root: Path, answers: WizardAnswers) -> list[Path]` | Create skeleton using wizard answers; generates config dynamically; call `ensure_iwh_gitignored()` |
+| `create_lexibrary_skeleton` | `(project_root: Path) -> list[Path]` | Create dirs (`concepts/`, `stack/`), `.gitkeep` files, template files (`config.yaml`, `START_HERE.md`), and `.lexignore`; call `ensure_iwh_gitignored()` and `_ensure_daemon_files_gitignored()`; return list of paths created |
+| `create_lexibrary_from_wizard` | `(project_root: Path, answers: WizardAnswers) -> list[Path]` | Create skeleton using wizard answers; generates config dynamically; call `ensure_iwh_gitignored()` and `_ensure_daemon_files_gitignored()` |
 | `_generate_config_yaml` | `(answers: WizardAnswers) -> str` | Build config YAML from wizard answers with Pydantic validation via `LexibraryConfig.model_validate()` |
 | `_generate_lexignore` | `(patterns: list[str]) -> str` | Build `.lexignore` content from wizard-collected patterns with `LEXIGNORE_HEADER` |
-| `START_HERE_PLACEHOLDER` | `str` | Placeholder content for `START_HERE.md` before `lexi update` runs; references IWH inter-agent signals |
+| `_ensure_daemon_files_gitignored` | `(project_root: Path) -> bool` | Append `.lexibrarian.log` and `.lexibrarian.pid` to `.gitignore` if not already present; creates `.gitignore` if it does not exist |
+| `START_HERE_PLACEHOLDER` | `str` | Placeholder content for `START_HERE.md` before `lexictl update` runs; references IWH inter-agent signals |
 | `LEXIGNORE_HEADER` | `str` | Standard header comment block for `.lexignore` files |
 
 ## Dependencies
@@ -33,6 +34,8 @@
 - `create_lexibrary_from_wizard`: creates skeleton with dynamically generated config from `WizardAnswers`
 - `_generate_config_yaml` validates through Pydantic before serializing, so invalid wizard answers raise `ValidationError` before writing
 - Both init paths call `ensure_iwh_gitignored()` to add `**/.iwh` to `.gitignore`
+- Both init paths call `_ensure_daemon_files_gitignored()` to add `.lexibrarian.log` and `.lexibrarian.pid` to `.gitignore`
+- `_DAEMON_GITIGNORE_PATTERNS` constant holds the list of daemon runtime files to gitignore
 - `START_HERE_PLACEHOLDER` references IWH signals, guiding agents to check for `.iwh` files
 - HANDOFF.md has been removed -- IWH files replace the old HANDOFF mechanism
 

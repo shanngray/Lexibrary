@@ -10,7 +10,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from lexibrarian.archivist.change_checker import ChangeLevel, check_change
+from lexibrarian.archivist.change_checker import (
+    ChangeLevel,
+    _compute_design_content_hash,
+    check_change,
+)
 from lexibrarian.archivist.dependency_extractor import extract_dependencies
 from lexibrarian.archivist.service import ArchivistService, DesignFileRequest
 from lexibrarian.archivist.start_here import generate_start_here
@@ -32,6 +36,8 @@ from lexibrarian.artifacts.design_file_serializer import serialize_design_file
 from lexibrarian.ast_parser import compute_hashes, parse_interface, render_skeleton
 from lexibrarian.config.schema import LexibraryConfig
 from lexibrarian.ignore import create_ignore_matcher
+from lexibrarian.utils.atomic import atomic_write
+from lexibrarian.utils.conflict import has_conflict_markers
 from lexibrarian.utils.languages import detect_language
 from lexibrarian.utils.paths import LEXIBRARY_DIR, aindex_path, mirror_path
 from lexibrarian.wiki.index import ConceptIndex
@@ -111,7 +117,7 @@ def _refresh_footer_hashes(
         design_file.metadata.interface_hash = interface_hash
         design_file.metadata.generated = datetime.now(UTC).replace(tzinfo=None)
         serialized = serialize_design_file(design_file)
-        design_path.write_text(serialized, encoding="utf-8")
+        atomic_write(design_path, serialized)
         return
 
     # Full parse failed -- try metadata-level update
@@ -143,7 +149,7 @@ def _refresh_footer_hashes(
     footer_lines.append("-->")
 
     new_text = body + "\n\n" + "\n".join(footer_lines) + "\n"
-    design_path.write_text(new_text, encoding="utf-8")
+    atomic_write(design_path, new_text)
 
 
 def _refresh_parent_aindex(
@@ -182,7 +188,7 @@ def _refresh_parent_aindex(
 
     if updated:
         serialized = serialize_aindex(aindex)
-        aindex_file_path.write_text(serialized, encoding="utf-8")
+        atomic_write(aindex_file_path, serialized)
 
     return updated
 
@@ -230,6 +236,14 @@ async def update_file(
             )
         return FileResult(change=change, aindex_refreshed=aindex_refreshed)
 
+    # 5b. Conflict marker check — skip files with unresolved merge conflicts
+    if has_conflict_markers(source_path):
+        logger.warning(
+            "Skipping %s: unresolved merge conflict markers detected",
+            source_path.name,
+        )
+        return FileResult(change=change, failed=True)
+
     # 6. LLM generation: NEW_FILE, CONTENT_ONLY, CONTENT_CHANGED, INTERFACE_CHANGED
     rel_path = str(source_path.relative_to(project_root))
     try:
@@ -245,6 +259,12 @@ async def update_file(
         skeleton_text = render_skeleton(skeleton)
 
     language = detect_language(rel_path) if skeleton is not None else None
+
+    # Capture pre-LLM design hash for TOCTOU re-check (D-061 / D3)
+    pre_llm_design_hash: str | None = None
+    pre_llm_metadata = parse_design_file_metadata(design_path)
+    if pre_llm_metadata is not None and pre_llm_metadata.design_hash is not None:
+        pre_llm_design_hash = pre_llm_metadata.design_hash
 
     # Read existing design file content for update context
     existing_design: str | None = None
@@ -272,6 +292,16 @@ async def update_file(
         return FileResult(change=change, failed=True)
 
     output = result.design_file_output
+
+    # 6b. Design hash re-check (TOCTOU protection, D-061 / D3)
+    if pre_llm_design_hash is not None:
+        post_llm_design_hash = _compute_design_content_hash(design_path)
+        if post_llm_design_hash is not None and post_llm_design_hash != pre_llm_design_hash:
+            logger.info(
+                "Discarding LLM output for %s: design file was edited during generation",
+                rel_path,
+            )
+            return FileResult(change=ChangeLevel.AGENT_UPDATED, aindex_refreshed=False)
 
     # 7. Build DesignFile model
     deps = extract_dependencies(source_path, project_root)
@@ -317,7 +347,7 @@ async def update_file(
         token_budget_exceeded = True
 
     # 9. Write design file (even if over budget)
-    design_path.write_text(serialized, encoding="utf-8")
+    atomic_write(design_path, serialized)
     logger.info("Wrote design file: %s", design_path)
 
     # 10. Refresh parent .aindex
@@ -328,6 +358,104 @@ async def update_file(
         aindex_refreshed=aindex_refreshed,
         token_budget_exceeded=token_budget_exceeded,
     )
+
+
+def _accumulate_stats(stats: UpdateStats, file_result: FileResult) -> None:
+    """Update *stats* in-place from a single file result."""
+    change = file_result.change
+    if file_result.failed:
+        stats.files_failed += 1
+    elif change == ChangeLevel.UNCHANGED:
+        stats.files_unchanged += 1
+    elif change == ChangeLevel.AGENT_UPDATED:
+        stats.files_agent_updated += 1
+    elif change == ChangeLevel.NEW_FILE:
+        stats.files_created += 1
+    elif change in (
+        ChangeLevel.CONTENT_ONLY,
+        ChangeLevel.CONTENT_CHANGED,
+        ChangeLevel.INTERFACE_CHANGED,
+    ):
+        stats.files_updated += 1
+
+    if file_result.aindex_refreshed:
+        stats.aindex_refreshed += 1
+    if file_result.token_budget_exceeded:
+        stats.token_budget_warnings += 1
+
+
+async def update_files(
+    file_paths: list[Path],
+    project_root: Path,
+    config: LexibraryConfig,
+    archivist: ArchivistService,
+    progress_callback: ProgressCallback | None = None,
+) -> UpdateStats:
+    """Process a specific list of source files through the pipeline.
+
+    Unlike ``update_project()``, this does NOT discover files via rglob and
+    does NOT regenerate ``START_HERE.md``. It is designed for git-hook and
+    ``--changed-only`` usage where the caller already knows which files changed.
+
+    Files that are deleted, binary, ignored, or inside ``.lexibrary/`` are
+    silently skipped.
+    """
+    stats = UpdateStats()
+    ignore_matcher = create_ignore_matcher(config, project_root)
+    binary_exts = set(config.crawl.binary_extensions)
+
+    # Load available concept names for wikilink guidance
+    concepts_dir = project_root / LEXIBRARY_DIR / "concepts"
+    concept_index = ConceptIndex.load(concepts_dir)
+    available_concepts = concept_index.names() or None
+
+    for source_path in file_paths:
+        # Skip deleted files
+        if not source_path.exists():
+            logger.debug("Skipping deleted file: %s", source_path)
+            continue
+
+        # Skip .lexibrary contents
+        try:
+            source_path.resolve().relative_to((project_root / LEXIBRARY_DIR).resolve())
+            logger.debug("Skipping .lexibrary file: %s", source_path)
+            continue
+        except ValueError:
+            pass
+
+        # Skip binary files
+        if _is_binary(source_path, binary_exts):
+            logger.debug("Skipping binary file: %s", source_path)
+            continue
+
+        # Skip ignored files
+        if ignore_matcher.is_ignored(source_path):
+            logger.debug("Skipping ignored file: %s", source_path)
+            continue
+
+        stats.files_scanned += 1
+
+        try:
+            file_result = await update_file(
+                source_path,
+                project_root,
+                config,
+                archivist,
+                available_concepts=available_concepts,
+            )
+        except Exception:
+            logger.exception("Unexpected error processing %s", source_path)
+            stats.files_failed += 1
+            if progress_callback is not None:
+                progress_callback(source_path, ChangeLevel.UNCHANGED)
+            continue
+
+        _accumulate_stats(stats, file_result)
+
+        if progress_callback is not None:
+            progress_callback(source_path, file_result.change)
+
+    return stats
 
 
 async def update_project(
@@ -404,31 +532,10 @@ async def update_project(
                 progress_callback(source_path, ChangeLevel.UNCHANGED)
             continue
 
-        change = file_result.change
-
-        # Accumulate stats
-        if file_result.failed:
-            stats.files_failed += 1
-        elif change == ChangeLevel.UNCHANGED:
-            stats.files_unchanged += 1
-        elif change == ChangeLevel.AGENT_UPDATED:
-            stats.files_agent_updated += 1
-        elif change == ChangeLevel.NEW_FILE:
-            stats.files_created += 1
-        elif change in (
-            ChangeLevel.CONTENT_ONLY,
-            ChangeLevel.CONTENT_CHANGED,
-            ChangeLevel.INTERFACE_CHANGED,
-        ):
-            stats.files_updated += 1
-
-        if file_result.aindex_refreshed:
-            stats.aindex_refreshed += 1
-        if file_result.token_budget_exceeded:
-            stats.token_budget_warnings += 1
+        _accumulate_stats(stats, file_result)
 
         if progress_callback is not None:
-            progress_callback(source_path, change)
+            progress_callback(source_path, file_result.change)
 
     # Step 5: Regenerate START_HERE.md after processing all files (pipeline spec §5)
     try:

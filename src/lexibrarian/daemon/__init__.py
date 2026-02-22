@@ -1,4 +1,4 @@
-"""Daemon service for automatic re-indexing on file changes."""
+"""Daemon service for automatic library maintenance on file changes."""
 
 from __future__ import annotations
 

@@ -41,7 +41,7 @@ def parse_iwh(path: Path) -> IWHFile | None:
         return None
 
     # Extract body: everything after the closing frontmatter delimiter
-    body = text[fm_match.end():]
+    body = text[fm_match.end() :]
     # Strip a single leading newline if present (frontmatter pattern may
     # consume the trailing newline of ``---``).
     return iwh.model_copy(update={"body": body.strip("\n") if body.strip() else ""})

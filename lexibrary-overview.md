@@ -134,7 +134,7 @@ These strategies are configured in `.lexibrary/config.yaml` via glob patterns. T
 
 ### Scope root
 
-`scope_root` in config (default: project root) controls which files get design files. Files outside `scope_root` appear in `.aindex` directory listings (agents can see they exist) but don't get design files. This allows projects to focus documentation on their core code (e.g., `src/`) without generating design files for config, scripts, or other peripheral files.
+`scope_root` controls which files get design files. Files outside `scope_root` appear in `.aindex` directory listings but don't get design files. See §10 for full configuration details.
 
 ### Design file format
 
@@ -287,8 +287,8 @@ MoneyHandling      — All monetary values use Decimal, never float
 RepositoryPattern  — Data access via repository classes, not direct ORM
 
 $ lexi concepts auth           # fuzzy search by name, alias, tag
-$ lexi concepts --tag security # filter by tag
-$ lexi concepts --status draft # filter by status
+$ lexi concepts --tag security # filter by tag (planned)
+$ lexi concepts --status draft # filter by status (planned)
 ```
 
 ### Concept lifecycle
@@ -510,7 +510,7 @@ Internal refactors that don't change the public interface get a lighter touch (u
 
 ### The update engine
 
-1. **Trigger** — file save detected by daemon (watchdog + debounce) or manual `lexictl update` invocation.
+1. **Trigger** — git post-commit hook, periodic sweep, manual `lexictl update` invocation, or CI pipeline step.
 2. **Detection** — SHA-256 content hash compared to stored hash. If unchanged, skip.
 3. **Analysis** — if content changed, check interface hash:
    - **Non-code file** (no interface hash) — full design file regeneration (`CONTENT_CHANGED`).
@@ -764,12 +764,16 @@ Two CLIs serve different audiences. `lexi` is the agent-facing interface for day
 
 ### `lexi` — agent-facing commands
 
+> Commands marked **(planned)** are part of the target design but not yet implemented.
+
 ```
 lexi lookup <file>                        Return design file for a source file
 lexi index <directory> [-r]               Return .aindex for a directory (-r for recursive)
 lexi describe <directory> "description"   Update billboard description in .aindex
-lexi concepts [<topic>] [--tag <t>] [--status <s>] [--all]
-                                          List or search concept files
+lexi concepts [<topic>]                   List or search concept files
+  (planned) --tag <t>                       Filter by tag
+  (planned) --status <s>                    Filter by status
+  (planned) --all                           Include deprecated concepts
 lexi concept new <name>                    Create a new concept from template
 lexi concept link <file> <concept>         Add wikilink to a design file
 lexi stack search <query> [--tag <t>] [--scope <path>] [--status <s>]
@@ -782,8 +786,8 @@ lexi stack vote <post-id> [--answer <n>] up|down [--comment "..."]
 lexi stack accept <post-id> --answer <n>  Accept an answer (marks resolved)
 lexi stack view <post-id>                 View a post with answers
 lexi stack list [--status <s>] [--tag <t>] List Stack posts with optional filters
-lexi stack mark-outdated <post-id>        Mark a Stack post as outdated
-lexi stack duplicate <post-id> --of <id>  Mark a Stack post as duplicate
+lexi stack mark-outdated <post-id>        Mark a Stack post as outdated (planned)
+lexi stack duplicate <post-id> --of <id>  Mark a Stack post as duplicate (planned)
 lexi search --tag <t> [--scope <path>]    Search by tags across the library
 ```
 
@@ -795,9 +799,9 @@ lexictl setup --update                     Refresh agent environment rules from 
 lexictl setup --hooks                      Install git post-commit hook for auto-updates
 lexictl update [<path>]                    Generate/refresh design files (Archivist)
 lexictl update --changed-only <files>      Update only specified files (used by hooks/CI)
-lexictl update --start-here                Regenerate START_HERE.md only
-lexictl update --dry-run                   Preview changes without LLM calls
-lexictl validate [--severity <s>] [--fix]  Run consistency checks on library
+lexictl update --start-here                Regenerate START_HERE.md only (planned)
+lexictl validate [--severity <s>]          Run consistency checks on library
+  (planned) --fix                            Auto-fix certain issues
 lexictl status [--quiet]                   Show library health / staleness dashboard
 lexictl sweep                              Run one update sweep (process pending changes, exit)
 lexictl sweep --watch                      Run periodic sweeps in foreground (safety net)
@@ -885,7 +889,7 @@ Three layers of ignore patterns are merged:
 | Change detection | SHA-256 (hashlib) | Content + interface hashing |
 | Daemon | watchdog + debounce | File system monitoring for auto-updates |
 | LLM prompts | BAML | Provider-agnostic prompt definitions |
-| CLI | Click or Typer | Agent-friendly command structure |
+| CLI | Typer | Agent-friendly command structure |
 | Packaging | hatchling | src layout, standard Python packaging |
 
 ---

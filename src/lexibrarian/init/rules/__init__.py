@@ -7,8 +7,8 @@ Public API:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from lexibrarian.init.rules.claude import generate_claude_rules
 from lexibrarian.init.rules.codex import generate_codex_rules
@@ -56,10 +56,7 @@ def generate_rules(
     if unsupported:
         supported = ", ".join(sorted(_GENERATORS.keys()))
         bad = ", ".join(sorted(unsupported))
-        msg = (
-            f"Unsupported environment(s): {bad}. "
-            f"Supported environments: {supported}"
-        )
+        msg = f"Unsupported environment(s): {bad}. Supported environments: {supported}"
         raise ValueError(msg)
 
     results: dict[str, list[Path]] = {}

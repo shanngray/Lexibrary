@@ -133,8 +133,11 @@ class DaemonConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     debounce_seconds: float = 2.0
-    sweep_interval_seconds: int = 300
-    enabled: bool = True
+    sweep_interval_seconds: int = 3600
+    sweep_skip_if_unchanged: bool = True
+    git_suppression_seconds: int = 5
+    watchdog_enabled: bool = False
+    log_level: str = "info"
 
 
 class ASTConfig(BaseModel):

@@ -1,4 +1,13 @@
-"""Daemon service orchestrating watcher, debouncer, and periodic sweep."""
+"""Daemon service with three entry points for library maintenance.
+
+Provides ``run_once`` (single sweep), ``run_watch`` (periodic sweeps),
+and ``run_watchdog`` (deprecated real-time file watching).  Uses the
+archivist pipeline (``update_project``) instead of the retired
+crawler engine.
+
+Watchdog imports are lazy -- the module loads and ``run_once`` /
+``run_watch`` work even when the ``watchdog`` package is not installed.
+"""
 
 from __future__ import annotations
 
@@ -11,18 +20,16 @@ from pathlib import Path
 from types import FrameType
 
 from rich.console import Console
-from watchdog.observers import Observer
-from watchdog.observers.api import BaseObserver
 
-from lexibrarian.config import LexibraryConfig, find_config_file, load_config
-from lexibrarian.crawler import full_crawl
-from lexibrarian.crawler.change_detector import ChangeDetector
-from lexibrarian.daemon.debouncer import Debouncer
+from lexibrarian.archivist.pipeline import update_project
+from lexibrarian.archivist.service import ArchivistService
+from lexibrarian.config.loader import load_config
+from lexibrarian.config.schema import LexibraryConfig
+from lexibrarian.daemon.logging import setup_daemon_logging
 from lexibrarian.daemon.scheduler import PeriodicSweep
-from lexibrarian.daemon.watcher import LexibrarianEventHandler
 from lexibrarian.ignore import create_ignore_matcher
-from lexibrarian.llm import create_llm_service
-from lexibrarian.tokenizer import create_tokenizer
+from lexibrarian.llm.rate_limiter import RateLimiter
+from lexibrarian.utils.paths import LEXIBRARY_DIR
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -30,111 +37,212 @@ console = Console()
 _PID_FILENAME = ".lexibrarian.pid"
 
 
+def _has_changes(root: Path, last_sweep: float) -> bool:
+    """Check whether any file under *root* has mtime newer than *last_sweep*.
+
+    Uses ``os.scandir()`` for a fast stat walk.  Returns ``True`` on the
+    first file found with a newer mtime (short-circuit).  Skips the
+    ``.lexibrary/`` directory to avoid self-triggered loops.
+
+    If *last_sweep* is ``0.0`` (first run), always returns ``True``.
+    """
+    if last_sweep == 0.0:
+        return True
+
+    lexibrary_abs = (root / LEXIBRARY_DIR).resolve()
+
+    def _scan(directory: Path) -> bool:
+        try:
+            with os.scandir(directory) as it:
+                for entry in it:
+                    entry_path = Path(entry.path).resolve()
+
+                    # Skip the .lexibrary directory entirely
+                    if entry.is_dir(follow_symlinks=False):
+                        if entry_path == lexibrary_abs:
+                            continue
+                        if _scan(entry_path):
+                            return True
+                    elif entry.is_file(follow_symlinks=False):
+                        try:
+                            if entry.stat().st_mtime > last_sweep:
+                                return True
+                        except OSError:
+                            continue
+        except OSError:
+            pass
+        return False
+
+    return _scan(root)
+
+
 class DaemonService:
-    """Orchestrates file watching, debouncing, and periodic sweeps."""
+    """Orchestrates library maintenance via sweep, periodic watch, or watchdog.
 
-    def __init__(self, root: Path, foreground: bool = True) -> None:
+    Constructor accepts only a ``root`` path.  Call one of the three entry
+    points to start:
+
+    - ``run_once()`` -- single sweep then exit
+    - ``run_watch()`` -- periodic sweeps, blocks until interrupted
+    - ``run_watchdog()`` -- deprecated real-time file watching
+    """
+
+    def __init__(self, root: Path) -> None:
         self._root = root.resolve()
-        self._foreground = foreground
         self._shutdown_event = threading.Event()
-        self._observer: BaseObserver | None = None
-        self._debouncer: Debouncer | None = None
+        self._observer: object | None = None
         self._sweep: PeriodicSweep | None = None
+        self._last_sweep: float = 0.0
 
-    def start(self) -> None:
-        """Start the daemon service."""
-        if not self._foreground:
-            console.print(
-                "[yellow]Background mode is not yet supported.[/yellow]\n"
-                "Use [cyan]lexictl daemon --foreground[/cyan] instead."
-            )
+    # -- public entry points ------------------------------------------------
+
+    def run_once(self) -> None:
+        """Run a single project update sweep, then return.
+
+        Respects ``sweep_skip_if_unchanged``: if enabled and no files have
+        an mtime newer than the last sweep, the sweep is skipped.
+        """
+        config = self._load_config()
+        setup_daemon_logging(self._root, config.daemon.log_level)
+
+        if config.daemon.sweep_skip_if_unchanged and not _has_changes(self._root, self._last_sweep):
+            console.print("[dim]No changes detected -- skipping sweep.[/dim]")
+            logger.debug("run_once: no changes detected, skipping sweep")
             return
 
-        # Load config
-        config_path = find_config_file(self._root)
-        config = load_config(config_path)
+        self._run_sweep(config)
+        console.print("[green]Sweep complete.[/green]")
 
-        # Configure logging to file
-        log_path = self._root / config.output.log_filename
-        logging.basicConfig(
-            level=logging.INFO,
-            filename=str(log_path),
-            format="%(asctime)s %(name)s %(levelname)s %(message)s",
-        )
+    def run_watch(self) -> None:
+        """Run periodic sweeps in the foreground until interrupted.
 
-        # Build dependencies
-        ignore_matcher = create_ignore_matcher(config, self._root)
-        token_counter = create_tokenizer(config.tokenizer)
-        llm_service = create_llm_service(config.llm)
-        change_detector = ChangeDetector(self._root / config.output.cache_filename)
-        change_detector.load()
+        Blocks on a shutdown event.  SIGTERM and SIGINT trigger graceful
+        shutdown.
+        """
+        config = self._load_config()
+        setup_daemon_logging(self._root, config.daemon.log_level)
 
-        # Create debouncer
-        self._debouncer = Debouncer(
-            delay=config.daemon.debounce_seconds,
-            callback=lambda dirs: self._incremental_reindex(
-                config, ignore_matcher, token_counter, llm_service, change_detector
-            ),
-        )
+        interval = float(config.daemon.sweep_interval_seconds)
 
-        # Create periodic sweep
         self._sweep = PeriodicSweep(
-            interval=float(config.daemon.sweep_interval_seconds),
-            callback=lambda: self._full_sweep(
-                config, ignore_matcher, token_counter, llm_service, change_detector
-            ),
+            interval=interval,
+            callback=lambda: self._periodic_callback(config),
         )
 
-        # Create watcher
-        handler = LexibrarianEventHandler(
-            debouncer=self._debouncer,
-            ignore_matcher=ignore_matcher,
-        )
-        self._observer = Observer()
-        self._observer.schedule(handler, str(self._root), recursive=True)
-
-        # Write PID file
-        self._write_pid_file()
-
-        # Install signal handlers
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
 
-        # Start components
-        self._observer.start()
+        self._sweep.start()
+        console.print(
+            f"[green]Watching[/green] [cyan]{self._root}[/cyan] "
+            f"(sweep every {interval:.0f}s). Press Ctrl+C to stop."
+        )
+        logger.info("run_watch started, sweep every %.0fs", interval)
+
+        self._shutdown_event.wait()
+        self.stop()
+
+    def run_watchdog(self) -> None:
+        """Start the deprecated real-time file watchdog.
+
+        Requires ``daemon.watchdog_enabled: true`` in config.  If disabled,
+        prints a message suggesting ``lexictl sweep --watch`` and returns.
+        Watchdog dependencies are imported lazily.
+        """
+        config = self._load_config()
+        setup_daemon_logging(self._root, config.daemon.log_level)
+
+        if not config.daemon.watchdog_enabled:
+            console.print(
+                "[yellow]Watchdog mode is disabled.[/yellow]\n"
+                "Use [cyan]lexictl sweep --watch[/cyan] for periodic sweeps, "
+                "or set [cyan]daemon.watchdog_enabled: true[/cyan] in config."
+            )
+            return
+
+        console.print(
+            "[yellow]Warning:[/yellow] Watchdog mode is deprecated. "
+            "Consider using [cyan]lexictl sweep --watch[/cyan] instead."
+        )
+
+        # Lazy imports -- only needed for watchdog mode
+        try:
+            from watchdog.observers import Observer
+
+            from lexibrarian.daemon.debouncer import Debouncer
+            from lexibrarian.daemon.watcher import LexibrarianEventHandler
+        except ImportError as exc:
+            msg = (
+                "The 'watchdog' package is required for watchdog mode. "
+                "Install it with: pip install watchdog"
+            )
+            raise ImportError(msg) from exc
+
+        ignore_matcher = create_ignore_matcher(config, self._root)
+        interval = float(config.daemon.sweep_interval_seconds)
+
+        debouncer = Debouncer(
+            delay=config.daemon.debounce_seconds,
+            callback=lambda dirs: self._run_sweep(config),
+        )
+
+        self._sweep = PeriodicSweep(
+            interval=interval,
+            callback=lambda: self._periodic_callback(config),
+        )
+
+        handler = LexibrarianEventHandler(
+            debouncer=debouncer,
+            ignore_matcher=ignore_matcher,
+        )
+        observer = Observer()
+        observer.schedule(handler, str(self._root), recursive=True)
+        self._observer = observer
+
+        self._write_pid_file()
+
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
+
+        observer.start()
         self._sweep.start()
 
         pid = os.getpid()
         console.print(
-            f"[green]Daemon running[/green] (PID {pid}) watching [cyan]{self._root}[/cyan]\n"
-            "Press Ctrl+C to stop."
+            f"[green]Daemon running[/green] (PID {pid}) watching "
+            f"[cyan]{self._root}[/cyan]\nPress Ctrl+C to stop."
         )
-        logger.info("Daemon started (PID %d) watching %s", pid, self._root)
+        logger.info("Watchdog daemon started (PID %d) watching %s", pid, self._root)
 
-        # Block until shutdown
         self._shutdown_event.wait()
-
-        # Cleanup
         self.stop()
+
+    # -- lifecycle ----------------------------------------------------------
 
     def stop(self) -> None:
         """Gracefully stop all daemon components."""
         logger.info("Daemon shutting down...")
 
-        if self._debouncer is not None:
-            self._debouncer.cancel()
-
         if self._sweep is not None:
             self._sweep.stop()
 
         if self._observer is not None:
-            self._observer.stop()
-            self._observer.join(timeout=5.0)
+            # Observer has stop/join -- call via attribute to satisfy typing
+            observer = self._observer
+            if hasattr(observer, "stop"):
+                observer.stop()
+            if hasattr(observer, "join"):
+                observer.join(timeout=5.0)
 
         self._remove_pid_file()
-
         console.print("[yellow]Daemon stopped.[/yellow]")
         logger.info("Daemon stopped.")
+
+    # -- internal helpers ---------------------------------------------------
+
+    def _load_config(self) -> LexibraryConfig:
+        """Load project configuration from the project root."""
+        return load_config(project_root=self._root)
 
     def _signal_handler(self, signum: int, frame: FrameType | None) -> None:
         """Handle SIGTERM/SIGINT by triggering shutdown."""
@@ -151,62 +259,46 @@ class DaemonService:
         pid_path = self._root / _PID_FILENAME
         pid_path.unlink(missing_ok=True)
 
-    def _incremental_reindex(
-        self,
-        config: LexibraryConfig,
-        ignore_matcher: object,
-        token_counter: object,
-        llm_service: object,
-        change_detector: ChangeDetector,
-    ) -> None:
-        """Debounce callback: run full_crawl via asyncio.run()."""
-        logger.info("Incremental re-index triggered")
+    def _run_sweep(self, config: LexibraryConfig) -> None:
+        """Execute a single project update sweep via the archivist pipeline."""
+        logger.info("Sweep triggered")
         try:
+            archivist = ArchivistService(
+                rate_limiter=RateLimiter(),
+                config=config.llm,
+            )
             stats = asyncio.run(
-                full_crawl(
-                    root=self._root,
+                update_project(
+                    project_root=self._root,
                     config=config,
-                    ignore_matcher=ignore_matcher,  # type: ignore[arg-type]
-                    token_counter=token_counter,  # type: ignore[arg-type]
-                    llm_service=llm_service,  # type: ignore[arg-type]
-                    change_detector=change_detector,
+                    archivist=archivist,
                 )
             )
+            self._last_sweep = _current_time()
             logger.info(
-                "Re-index complete: %d dirs, %d summarized, %d cached",
-                stats.directories_indexed,
-                stats.files_summarized,
-                stats.files_cached,
+                "Sweep complete: %d scanned, %d updated, %d created, %d unchanged, %d failed",
+                stats.files_scanned,
+                stats.files_updated,
+                stats.files_created,
+                stats.files_unchanged,
+                stats.files_failed,
             )
         except Exception:
-            logger.exception("Incremental re-index failed")
+            logger.exception("Sweep failed")
 
-    def _full_sweep(
-        self,
-        config: LexibraryConfig,
-        ignore_matcher: object,
-        token_counter: object,
-        llm_service: object,
-        change_detector: ChangeDetector,
-    ) -> None:
-        """Periodic sweep callback: run full_crawl via asyncio.run()."""
-        logger.info("Periodic full sweep triggered")
-        try:
-            stats = asyncio.run(
-                full_crawl(
-                    root=self._root,
-                    config=config,
-                    ignore_matcher=ignore_matcher,  # type: ignore[arg-type]
-                    token_counter=token_counter,  # type: ignore[arg-type]
-                    llm_service=llm_service,  # type: ignore[arg-type]
-                    change_detector=change_detector,
-                )
-            )
-            logger.info(
-                "Full sweep complete: %d dirs, %d summarized, %d cached",
-                stats.directories_indexed,
-                stats.files_summarized,
-                stats.files_cached,
-            )
-        except Exception:
-            logger.exception("Full sweep failed")
+    def _periodic_callback(self, config: LexibraryConfig) -> None:
+        """Callback for PeriodicSweep: check for changes then sweep."""
+        if config.daemon.sweep_skip_if_unchanged and not _has_changes(self._root, self._last_sweep):
+            logger.debug("Periodic sweep: no changes detected, skipping")
+            return
+        self._run_sweep(config)
+
+
+def _current_time() -> float:
+    """Return the current time as a float (seconds since epoch).
+
+    Extracted into a function for testability.
+    """
+    import time
+
+    return time.time()

@@ -12,9 +12,7 @@ class TestWriteIWH:
     """Tests for write_iwh()."""
 
     def test_creates_iwh_file(self, tmp_path: Path) -> None:
-        result_path = write_iwh(
-            tmp_path, author="agent-1", scope="incomplete", body="WIP"
-        )
+        result_path = write_iwh(tmp_path, author="agent-1", scope="incomplete", body="WIP")
         assert result_path.exists()
         assert result_path == tmp_path / ".iwh"
 
@@ -37,9 +35,7 @@ class TestWriteIWH:
 
     def test_creates_parent_directories(self, tmp_path: Path) -> None:
         nested = tmp_path / "a" / "b" / "c"
-        result_path = write_iwh(
-            nested, author="agent-1", scope="incomplete", body="deep"
-        )
+        result_path = write_iwh(nested, author="agent-1", scope="incomplete", body="deep")
         assert result_path.exists()
         assert nested.is_dir()
         result = parse_iwh(result_path)

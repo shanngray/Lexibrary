@@ -72,13 +72,7 @@ def test_detects_markers_with_empty_section() -> None:
 
 def test_replaces_content_between_markers() -> None:
     """Replaces old section content with new section."""
-    original = (
-        f"Preamble\n"
-        f"{MARKER_START}\n"
-        f"old rules\n"
-        f"{MARKER_END}\n"
-        f"Postamble"
-    )
+    original = f"Preamble\n{MARKER_START}\nold rules\n{MARKER_END}\nPostamble"
     result = replace_lexibrarian_section(original, "new rules")
     assert "old rules" not in result
     assert "new rules" in result
@@ -90,13 +84,7 @@ def test_surrounding_content_preserved() -> None:
     """Content before and after the marker block remains unchanged."""
     preamble = "# My Project Rules\n\nDo not touch this."
     postamble = "\n## My Custom Section\n\nAlso preserved."
-    original = (
-        f"{preamble}\n"
-        f"{MARKER_START}\n"
-        f"old stuff\n"
-        f"{MARKER_END}"
-        f"{postamble}"
-    )
+    original = f"{preamble}\n{MARKER_START}\nold stuff\n{MARKER_END}{postamble}"
     result = replace_lexibrarian_section(original, "updated rules")
     assert result.startswith(preamble)
     assert result.endswith(postamble)
@@ -105,11 +93,7 @@ def test_surrounding_content_preserved() -> None:
 def test_handles_whitespace_around_markers() -> None:
     """Replacement succeeds when extra blank lines surround markers."""
     original = (
-        f"Preamble\n\n"
-        f"{MARKER_START}\n\n"
-        f"  old rules with whitespace  \n\n"
-        f"{MARKER_END}\n\n"
-        f"Postamble"
+        f"Preamble\n\n{MARKER_START}\n\n  old rules with whitespace  \n\n{MARKER_END}\n\nPostamble"
     )
     result = replace_lexibrarian_section(original, "clean rules")
     assert "clean rules" in result
@@ -120,13 +104,7 @@ def test_handles_whitespace_around_markers() -> None:
 
 def test_replaces_multiline_section() -> None:
     """Correctly replaces a multi-line section between markers."""
-    original = (
-        f"{MARKER_START}\n"
-        f"line 1\n"
-        f"line 2\n"
-        f"line 3\n"
-        f"{MARKER_END}"
-    )
+    original = f"{MARKER_START}\nline 1\nline 2\nline 3\n{MARKER_END}"
     result = replace_lexibrarian_section(original, "single line")
     assert result == f"{MARKER_START}\nsingle line\n{MARKER_END}"
 

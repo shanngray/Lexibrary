@@ -7,7 +7,6 @@ from pathlib import Path
 from lexibrarian.init.rules.claude import generate_claude_rules
 from lexibrarian.init.rules.markers import MARKER_END, MARKER_START
 
-
 # ---------------------------------------------------------------------------
 # Create from scratch
 # ---------------------------------------------------------------------------
@@ -101,11 +100,7 @@ class TestUpdateExistingSection:
         """Old content between markers is replaced."""
         claude_md = tmp_path / "CLAUDE.md"
         old_content = (
-            f"# My Rules\n\n"
-            f"{MARKER_START}\n"
-            f"old lexibrarian rules\n"
-            f"{MARKER_END}\n\n"
-            f"# My Other Rules"
+            f"# My Rules\n\n{MARKER_START}\nold lexibrarian rules\n{MARKER_END}\n\n# My Other Rules"
         )
         claude_md.write_text(old_content, encoding="utf-8")
 
@@ -119,11 +114,7 @@ class TestUpdateExistingSection:
         """Content before and after the marker block is preserved."""
         claude_md = tmp_path / "CLAUDE.md"
         old_content = (
-            f"# Before Section\n\n"
-            f"{MARKER_START}\n"
-            f"old stuff\n"
-            f"{MARKER_END}\n\n"
-            f"# After Section"
+            f"# Before Section\n\n{MARKER_START}\nold stuff\n{MARKER_END}\n\n# After Section"
         )
         claude_md.write_text(old_content, encoding="utf-8")
 
@@ -136,9 +127,7 @@ class TestUpdateExistingSection:
     def test_only_one_marker_pair(self, tmp_path: Path) -> None:
         """After update, there is exactly one start and one end marker."""
         claude_md = tmp_path / "CLAUDE.md"
-        old_content = (
-            f"{MARKER_START}\nold\n{MARKER_END}"
-        )
+        old_content = f"{MARKER_START}\nold\n{MARKER_END}"
         claude_md.write_text(old_content, encoding="utf-8")
 
         generate_claude_rules(tmp_path)

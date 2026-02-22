@@ -67,8 +67,26 @@ def test_ignore_config_defaults() -> None:
 def test_daemon_config_defaults() -> None:
     config = DaemonConfig()
     assert config.debounce_seconds == 2.0
-    assert config.sweep_interval_seconds == 300
-    assert config.enabled is True
+    assert config.sweep_interval_seconds == 3600
+    assert config.sweep_skip_if_unchanged is True
+    assert config.git_suppression_seconds == 5
+    assert config.watchdog_enabled is False
+    assert config.log_level == "info"
+
+
+def test_daemon_config_enabled_field_removed() -> None:
+    """DaemonConfig SHALL NOT have an enabled field."""
+    config = DaemonConfig()
+    assert not hasattr(config, "enabled")
+
+
+def test_daemon_config_old_enabled_silently_ignored() -> None:
+    """Loading config with old enabled: true field does not raise an error."""
+    config = DaemonConfig.model_validate({"enabled": True})
+    assert not hasattr(config, "enabled")
+    # New defaults still work
+    assert config.watchdog_enabled is False
+    assert config.sweep_interval_seconds == 3600
 
 
 def test_lexibrary_config_validates_all_subconfigs() -> None:
@@ -84,7 +102,7 @@ def test_lexibrary_config_partial_override() -> None:
     config = LexibraryConfig.model_validate({"llm": {"provider": "openai"}})
     assert config.llm.provider == "openai"
     assert config.llm.max_retries == 3
-    assert config.daemon.enabled is True
+    assert config.daemon.watchdog_enabled is False
 
 
 def test_invalid_type_raises_validation_error() -> None:

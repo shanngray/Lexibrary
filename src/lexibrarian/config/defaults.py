@@ -59,8 +59,11 @@ ignore:
 # Background daemon settings
 daemon:
   debounce_seconds: 2.0                  # Coalesce rapid file events (seconds)
-  sweep_interval_seconds: 300            # Full re-index safety net (seconds)
-  enabled: true                          # Enable daemon on start
+  sweep_interval_seconds: 3600           # Full re-index safety net (seconds)
+  sweep_skip_if_unchanged: true          # Skip sweep if no files changed since last run
+  git_suppression_seconds: 5             # Suppress watchdog events after git operations
+  watchdog_enabled: false                # Enable real-time file watching (opt-in)
+  log_level: info                        # Daemon log level (debug, info, warning, error)
 
 # Crawl behaviour
 crawl:

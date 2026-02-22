@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 from lexibrarian.iwh.model import IWHFile
@@ -42,9 +43,7 @@ def consume_iwh(directory: Path) -> IWHFile | None:
     result = parse_iwh(iwh_path)
 
     # Always delete the file, even if parsing failed
-    try:
+    with contextlib.suppress(OSError):
         iwh_path.unlink()
-    except OSError:
-        pass
 
     return result

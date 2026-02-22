@@ -6,7 +6,6 @@ from pathlib import Path
 
 from lexibrarian.init.rules.cursor import generate_cursor_rules
 
-
 # ---------------------------------------------------------------------------
 # MDC rules file
 # ---------------------------------------------------------------------------

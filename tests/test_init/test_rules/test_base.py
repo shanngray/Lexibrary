@@ -8,7 +8,6 @@ from lexibrarian.init.rules.base import (
     get_search_skill_content,
 )
 
-
 # ---------------------------------------------------------------------------
 # get_core_rules — key instructions
 # ---------------------------------------------------------------------------
