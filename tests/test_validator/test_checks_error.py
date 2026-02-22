@@ -102,8 +102,8 @@ def _write_concept_file(
 
     content = f"""---
 title: {title}
-aliases: [{', '.join(aliases)}]
-tags: [{', '.join(tags)}]
+aliases: [{", ".join(aliases)}]
+tags: [{", ".join(tags)}]
 status: {status}
 ---
 
@@ -131,17 +131,11 @@ def _write_stack_post(
     if concept_refs or file_refs or design_refs:
         refs_lines.append("refs:")
         if concept_refs:
-            refs_lines.append(
-                "  concepts: [" + ", ".join(concept_refs) + "]"
-            )
+            refs_lines.append("  concepts: [" + ", ".join(concept_refs) + "]")
         if file_refs:
-            refs_lines.append(
-                "  files: [" + ", ".join(file_refs) + "]"
-            )
+            refs_lines.append("  files: [" + ", ".join(file_refs) + "]")
         if design_refs:
-            refs_lines.append(
-                "  designs: [" + ", ".join(design_refs) + "]"
-            )
+            refs_lines.append("  designs: [" + ", ".join(design_refs) + "]")
 
     refs_block = "\n".join(refs_lines) if refs_lines else "refs: {}"
 
@@ -185,15 +179,20 @@ class TestCheckWikilinkResolution:
 
         # Create a concept that will be referenced
         _write_concept_file(
-            lexibrary_dir / "concepts", "Authentication",
-            title="Authentication", aliases=["auth"], tags=["security"],
+            lexibrary_dir / "concepts",
+            "Authentication",
+            title="Authentication",
+            aliases=["auth"],
+            tags=["security"],
         )
 
         # Create a source file and its design file with a resolvable wikilink
         (tmp_path / "src").mkdir(parents=True)
         (tmp_path / "src" / "auth.py").write_text("# auth", encoding="utf-8")
         _write_design_file(
-            lexibrary_dir, "src/auth.py", wikilinks=["Authentication"],
+            lexibrary_dir,
+            "src/auth.py",
+            wikilinks=["Authentication"],
         )
 
         issues = check_wikilink_resolution(project_root, lexibrary_dir)
@@ -214,7 +213,9 @@ class TestCheckWikilinkResolution:
 
         # Create design file with a wikilink to a non-existent concept
         _write_design_file(
-            lexibrary_dir, "src/auth.py", wikilinks=["NonExistentConcept"],
+            lexibrary_dir,
+            "src/auth.py",
+            wikilinks=["NonExistentConcept"],
         )
 
         issues = check_wikilink_resolution(project_root, lexibrary_dir)
@@ -232,15 +233,19 @@ class TestCheckWikilinkResolution:
 
         # Create a concept with a completely unrelated name
         _write_concept_file(
-            lexibrary_dir / "concepts", "DatabaseConfig",
-            title="DatabaseConfig", aliases=["db-config"], tags=["config"],
+            lexibrary_dir / "concepts",
+            "DatabaseConfig",
+            title="DatabaseConfig",
+            aliases=["db-config"],
+            tags=["config"],
         )
 
         # Reference something completely unrelated
         (tmp_path / "src").mkdir(parents=True)
         (tmp_path / "src" / "api.py").write_text("# api", encoding="utf-8")
         _write_design_file(
-            lexibrary_dir, "src/api.py",
+            lexibrary_dir,
+            "src/api.py",
             wikilinks=["ZzzzTotallyUnrelatedXxxx"],
         )
 
@@ -257,15 +262,16 @@ class TestCheckWikilinkResolution:
         (lexibrary_dir / "concepts").mkdir(parents=True)
 
         _write_stack_post(
-            lexibrary_dir / "stack", "ST-001", "test-post",
+            lexibrary_dir / "stack",
+            "ST-001",
+            "test-post",
             body_wikilinks=["MissingConcept"],
         )
 
         issues = check_wikilink_resolution(project_root, lexibrary_dir)
         assert len(issues) >= 1
         assert any(
-            i.check == "wikilink_resolution" and "MissingConcept" in i.message
-            for i in issues
+            i.check == "wikilink_resolution" and "MissingConcept" in i.message for i in issues
         )
 
     def test_no_design_files_returns_empty(self, tmp_path: Path) -> None:
@@ -277,9 +283,7 @@ class TestCheckWikilinkResolution:
         issues = check_wikilink_resolution(project_root, lexibrary_dir)
         assert issues == []
 
-    def test_design_file_without_wikilinks_returns_empty(
-        self, tmp_path: Path
-    ) -> None:
+    def test_design_file_without_wikilinks_returns_empty(self, tmp_path: Path) -> None:
         """Design files with no wikilinks produce no issues."""
         project_root = tmp_path
         lexibrary_dir = tmp_path / ".lexibrary"
@@ -332,16 +336,16 @@ class TestCheckFileExistence:
         assert "src/old_module.py" in issues[0].message
         assert "does not exist" in issues[0].message
 
-    def test_missing_stack_ref_file_produces_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_missing_stack_ref_file_produces_error(self, tmp_path: Path) -> None:
         """Stack post refs.files pointing to missing file produces an error."""
         project_root = tmp_path
         lexibrary_dir = tmp_path / ".lexibrary"
         lexibrary_dir.mkdir()
 
         _write_stack_post(
-            lexibrary_dir / "stack", "ST-001", "test-post",
+            lexibrary_dir / "stack",
+            "ST-001",
+            "test-post",
             file_refs=["src/nonexistent.py"],
         )
 
@@ -352,16 +356,16 @@ class TestCheckFileExistence:
         assert file_issues[0].severity == "error"
         assert file_issues[0].check == "file_existence"
 
-    def test_missing_stack_ref_design_produces_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_missing_stack_ref_design_produces_error(self, tmp_path: Path) -> None:
         """Stack post refs.designs pointing to missing file produces an error."""
         project_root = tmp_path
         lexibrary_dir = tmp_path / ".lexibrary"
         lexibrary_dir.mkdir()
 
         _write_stack_post(
-            lexibrary_dir / "stack", "ST-002", "design-ref",
+            lexibrary_dir / "stack",
+            "ST-002",
+            "design-ref",
             design_refs=[".lexibrary/src/missing.py.md"],
         )
 
@@ -382,7 +386,9 @@ class TestCheckFileExistence:
         (tmp_path / "src" / "handler.py").write_text("# h", encoding="utf-8")
 
         _write_stack_post(
-            lexibrary_dir / "stack", "ST-001", "test-post",
+            lexibrary_dir / "stack",
+            "ST-001",
+            "test-post",
             file_refs=["src/handler.py"],
         )
 
@@ -414,8 +420,11 @@ class TestCheckConceptFrontmatter:
         concepts_dir = lexibrary_dir / "concepts"
 
         _write_concept_file(
-            concepts_dir, "TestConcept",
-            title="TestConcept", aliases=["tc"], tags=["general"],
+            concepts_dir,
+            "TestConcept",
+            title="TestConcept",
+            aliases=["tc"],
+            tags=["general"],
             status="active",
         )
 
@@ -445,7 +454,8 @@ class TestCheckConceptFrontmatter:
         concepts_dir = lexibrary_dir / "concepts"
 
         _write_concept_file(
-            concepts_dir, "NoTitle",
+            concepts_dir,
+            "NoTitle",
             raw_content="""---
 aliases: [nt]
 tags: [test]
@@ -462,16 +472,15 @@ Missing title field.
         assert len(title_issues) == 1
         assert title_issues[0].severity == "error"
 
-    def test_missing_multiple_fields_produces_multiple_errors(
-        self, tmp_path: Path
-    ) -> None:
+    def test_missing_multiple_fields_produces_multiple_errors(self, tmp_path: Path) -> None:
         """Concept file missing multiple fields produces one error per field."""
         project_root = tmp_path
         lexibrary_dir = tmp_path / ".lexibrary"
         concepts_dir = lexibrary_dir / "concepts"
 
         _write_concept_file(
-            concepts_dir, "Minimal",
+            concepts_dir,
+            "Minimal",
             raw_content="""---
 title: Minimal
 ---
@@ -494,7 +503,8 @@ Just a title, nothing else.
         concepts_dir = lexibrary_dir / "concepts"
 
         _write_concept_file(
-            concepts_dir, "BadStatus",
+            concepts_dir,
+            "BadStatus",
             raw_content="""---
 title: BadStatus
 aliases: [bs]
@@ -519,7 +529,8 @@ Bad status value.
         concepts_dir = lexibrary_dir / "concepts"
 
         _write_concept_file(
-            concepts_dir, "BadYaml",
+            concepts_dir,
+            "BadYaml",
             raw_content="""---
 title: [unterminated
 aliases: broken
@@ -531,10 +542,7 @@ Bad YAML.
 
         issues = check_concept_frontmatter(project_root, lexibrary_dir)
         assert len(issues) >= 1
-        assert any(
-            i.check == "concept_frontmatter"
-            for i in issues
-        )
+        assert any(i.check == "concept_frontmatter" for i in issues)
 
     def test_no_concepts_dir_returns_empty(self, tmp_path: Path) -> None:
         """When no concepts directory exists, no issues are returned."""
@@ -553,7 +561,8 @@ Bad YAML.
 
         for status in ("draft", "active", "deprecated"):
             _write_concept_file(
-                concepts_dir, f"Concept_{status}",
+                concepts_dir,
+                f"Concept_{status}",
                 title=f"Concept {status}",
                 aliases=[status],
                 tags=["test"],

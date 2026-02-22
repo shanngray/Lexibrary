@@ -100,9 +100,7 @@ def check_wikilink_resolution(
             # Extract wikilinks from body text
             body_links = _WIKILINK_RE.findall(post.raw_body)
             # Also include concept refs from frontmatter
-            all_links_set: set[str] = set(body_links) | set(
-                post.frontmatter.refs.concepts
-            )
+            all_links_set: set[str] = set(body_links) | set(post.frontmatter.refs.concepts)
 
             for link_text in sorted(all_links_set):
                 result = resolver.resolve(link_text)
@@ -192,9 +190,7 @@ def check_file_existence(
                         ValidationIssue(
                             severity="error",
                             check="file_existence",
-                            message=(
-                                f"Referenced design file {design_ref} does not exist"
-                            ),
+                            message=(f"Referenced design file {design_ref} does not exist"),
                             artifact=rel_path,
                             suggestion="Update or remove the design reference.",
                         )
@@ -250,8 +246,7 @@ def check_concept_frontmatter(
                     message="Missing YAML frontmatter",
                     artifact=rel_path,
                     suggestion=(
-                        "Add --- delimited YAML frontmatter with "
-                        "title, aliases, tags, status."
+                        "Add --- delimited YAML frontmatter with title, aliases, tags, status."
                     ),
                 )
             )
@@ -307,10 +302,7 @@ def check_concept_frontmatter(
                         check="concept_frontmatter",
                         message=f"Invalid status: {data['status']}",
                         artifact=rel_path,
-                        suggestion=(
-                            f"Status must be one of: "
-                            f"{', '.join(sorted(valid_statuses))}."
-                        ),
+                        suggestion=(f"Status must be one of: {', '.join(sorted(valid_statuses))}."),
                     )
                 )
 
@@ -363,7 +355,7 @@ def check_hash_freshness(
                         f"vs current {current_hash[:12]}...)"
                     ),
                     artifact=rel_design,
-                    suggestion="Run `lexi update` to regenerate the design file.",
+                    suggestion="Run `lexictl update` to regenerate the design file.",
                 )
             )
 
@@ -389,39 +381,14 @@ def check_token_budgets(
     # Check START_HERE.md
     start_here = lexibrary_dir / "START_HERE.md"
     if start_here.is_file():
-        tokens = counter.count(
-            start_here.read_text(encoding="utf-8", errors="replace")
-        )
+        tokens = counter.count(start_here.read_text(encoding="utf-8", errors="replace"))
         if tokens > budgets.start_here_tokens:
             issues.append(
                 ValidationIssue(
                     severity="warning",
                     check="token_budgets",
-                    message=(
-                        f"Over budget: {tokens} tokens "
-                        f"(limit {budgets.start_here_tokens})"
-                    ),
+                    message=(f"Over budget: {tokens} tokens (limit {budgets.start_here_tokens})"),
                     artifact="START_HERE.md",
-                    suggestion="Trim content to stay within the token budget.",
-                )
-            )
-
-    # Check HANDOFF.md
-    handoff = lexibrary_dir / "HANDOFF.md"
-    if handoff.is_file():
-        tokens = counter.count(
-            handoff.read_text(encoding="utf-8", errors="replace")
-        )
-        if tokens > budgets.handoff_tokens:
-            issues.append(
-                ValidationIssue(
-                    severity="warning",
-                    check="token_budgets",
-                    message=(
-                        f"Over budget: {tokens} tokens "
-                        f"(limit {budgets.handoff_tokens})"
-                    ),
-                    artifact="HANDOFF.md",
                     suggestion="Trim content to stay within the token budget.",
                 )
             )
@@ -432,9 +399,7 @@ def check_token_budgets(
         for file_path in sorted(src_dir.rglob("*.md")):
             if not file_path.is_file():
                 continue
-            tokens = counter.count(
-                file_path.read_text(encoding="utf-8", errors="replace")
-            )
+            tokens = counter.count(file_path.read_text(encoding="utf-8", errors="replace"))
             if tokens > budgets.design_file_tokens:
                 rel_path = str(file_path.relative_to(lexibrary_dir))
                 issues.append(
@@ -442,8 +407,7 @@ def check_token_budgets(
                         severity="warning",
                         check="token_budgets",
                         message=(
-                            f"Over budget: {tokens} tokens "
-                            f"(limit {budgets.design_file_tokens})"
+                            f"Over budget: {tokens} tokens (limit {budgets.design_file_tokens})"
                         ),
                         artifact=rel_path,
                         suggestion="Trim content to stay within the token budget.",
@@ -456,9 +420,7 @@ def check_token_budgets(
         for file_path in sorted(concepts_dir.glob("*.md")):
             if not file_path.is_file():
                 continue
-            tokens = counter.count(
-                file_path.read_text(encoding="utf-8", errors="replace")
-            )
+            tokens = counter.count(file_path.read_text(encoding="utf-8", errors="replace"))
             if tokens > budgets.concept_file_tokens:
                 rel_path = str(file_path.relative_to(lexibrary_dir))
                 issues.append(
@@ -466,8 +428,7 @@ def check_token_budgets(
                         severity="warning",
                         check="token_budgets",
                         message=(
-                            f"Over budget: {tokens} tokens "
-                            f"(limit {budgets.concept_file_tokens})"
+                            f"Over budget: {tokens} tokens (limit {budgets.concept_file_tokens})"
                         ),
                         artifact=rel_path,
                         suggestion="Trim content to stay within the token budget.",
@@ -478,19 +439,14 @@ def check_token_budgets(
     for aindex_file in sorted(lexibrary_dir.rglob(".aindex")):
         if not aindex_file.is_file():
             continue
-        tokens = counter.count(
-            aindex_file.read_text(encoding="utf-8", errors="replace")
-        )
+        tokens = counter.count(aindex_file.read_text(encoding="utf-8", errors="replace"))
         if tokens > budgets.aindex_tokens:
             rel_path = str(aindex_file.relative_to(lexibrary_dir))
             issues.append(
                 ValidationIssue(
                     severity="warning",
                     check="token_budgets",
-                    message=(
-                        f"Over budget: {tokens} tokens "
-                        f"(limit {budgets.aindex_tokens})"
-                    ),
+                    message=(f"Over budget: {tokens} tokens (limit {budgets.aindex_tokens})"),
                     artifact=rel_path,
                     suggestion="Trim content to stay within the token budget.",
                 )
@@ -608,9 +564,7 @@ def check_deprecated_concept_usage(
         if concept is None:
             continue
         if concept.frontmatter.status == "deprecated":
-            deprecated[concept.frontmatter.title.lower()] = (
-                concept.frontmatter.superseded_by
-            )
+            deprecated[concept.frontmatter.title.lower()] = concept.frontmatter.superseded_by
             for alias in concept.frontmatter.aliases:
                 deprecated[alias.lower()] = concept.frontmatter.superseded_by
 
@@ -650,10 +604,7 @@ def check_deprecated_concept_usage(
                         ValidationIssue(
                             severity="warning",
                             check="deprecated_concept_usage",
-                            message=(
-                                f"References deprecated concept "
-                                f"[[{match.strip()}]]."
-                            ),
+                            message=(f"References deprecated concept [[{match.strip()}]]."),
                             artifact=rel_path,
                             suggestion=suggestion,
                         )
@@ -861,7 +812,7 @@ def _iter_design_files(lexibrary_dir: Path) -> list[Path]:
         return []
 
     results: list[Path] = []
-    special_names = {"START_HERE.md", "HANDOFF.md"}
+    special_names = {"START_HERE.md"}
 
     for md_path in sorted(lexibrary_dir.rglob("*.md")):
         # Skip special files

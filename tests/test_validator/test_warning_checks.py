@@ -106,9 +106,7 @@ def _write_concept_file(
 
     aliases_yaml = "[" + ", ".join(aliases or []) + "]"
     tags_yaml = "[" + ", ".join(tags or ["general"]) + "]"
-    superseded_line = (
-        f"superseded_by: {superseded_by}" if superseded_by else ""
-    )
+    superseded_line = f"superseded_by: {superseded_by}" if superseded_by else ""
 
     filename = title.lower().replace(" ", "-") + ".md"
     concept_path = concepts_dir / filename
@@ -196,7 +194,7 @@ class TestCheckHashFreshness:
         assert issue.severity == "warning"
         assert issue.check == "hash_freshness"
         assert "stale" in issue.message.lower()
-        assert "lexi update" in issue.suggestion.lower()
+        assert "lexictl update" in issue.suggestion.lower()
 
     def test_missing_source_skipped(self, tmp_path: Path) -> None:
         """When source file doesn't exist, hash freshness is not checked."""
@@ -235,16 +233,12 @@ class TestCheckHashFreshness:
         # Fresh file
         fresh = src_dir / "fresh.py"
         fresh.write_text("pass\n", encoding="utf-8")
-        _write_design_file(
-            lexibrary_dir, "src/fresh.py", source_hash=hash_file(fresh)
-        )
+        _write_design_file(lexibrary_dir, "src/fresh.py", source_hash=hash_file(fresh))
 
         # Stale file
         stale = src_dir / "stale.py"
         stale.write_text("changed\n", encoding="utf-8")
-        _write_design_file(
-            lexibrary_dir, "src/stale.py", source_hash="wrong_hash"
-        )
+        _write_design_file(lexibrary_dir, "src/stale.py", source_hash="wrong_hash")
 
         issues = check_hash_freshness(project_root, lexibrary_dir)
         assert len(issues) == 1
@@ -325,26 +319,6 @@ class TestCheckTokenBudgets:
         start_issues = [i for i in issues if i.artifact == "START_HERE.md"]
         assert len(start_issues) == 1
         assert start_issues[0].severity == "warning"
-
-    def test_handoff_over_budget(self, tmp_path: Path) -> None:
-        """HANDOFF.md over budget produces warning."""
-        project_root = tmp_path
-        lexibrary_dir = project_root / ".lexibrary"
-        lexibrary_dir.mkdir()
-        _write_config(
-            project_root,
-            token_budgets={"handoff_tokens": 5},
-        )
-
-        handoff = lexibrary_dir / "HANDOFF.md"
-        handoff.write_text(
-            "A sufficiently long handoff document for testing.", encoding="utf-8"
-        )
-
-        issues = check_token_budgets(project_root, lexibrary_dir)
-        handoff_issues = [i for i in issues if i.artifact == "HANDOFF.md"]
-        assert len(handoff_issues) == 1
-        assert handoff_issues[0].severity == "warning"
 
     def test_concept_over_budget(self, tmp_path: Path) -> None:
         """Concept files over budget produce warnings."""
@@ -452,9 +426,7 @@ class TestCheckOrphanConcepts:
         lexibrary_dir.mkdir()
 
         # Create a concept with an alias
-        _write_concept_file(
-            lexibrary_dir, "Authentication", aliases=["Auth", "AuthN"]
-        )
+        _write_concept_file(lexibrary_dir, "Authentication", aliases=["Auth", "AuthN"])
 
         # Reference by alias in a design file
         _write_design_file(

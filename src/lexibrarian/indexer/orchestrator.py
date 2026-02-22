@@ -127,9 +127,7 @@ def index_recursive(
             stats.directories_indexed += 1
             # Count files in the directory for stats
             with contextlib.suppress(OSError):
-                stats.files_found += sum(
-                    1 for child in dir_path.iterdir() if child.is_file()
-                )
+                stats.files_found += sum(1 for child in dir_path.iterdir() if child.is_file())
         except Exception:
             stats.errors += 1
 

@@ -6,7 +6,6 @@ from pathlib import Path
 
 from lexibrarian.wiki.parser import parse_concept_file
 
-
 VALID_CONCEPT = """\
 ---
 title: JWT Auth

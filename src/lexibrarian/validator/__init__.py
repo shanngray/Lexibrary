@@ -92,19 +92,13 @@ def validate_library(
     # Validate severity_filter
     if severity_filter is not None and severity_filter not in _SEVERITY_ORDER:
         valid = ", ".join(sorted(_SEVERITY_ORDER, key=_SEVERITY_ORDER.get))  # type: ignore[arg-type]
-        msg = (
-            f"Invalid severity_filter: {severity_filter!r}. "
-            f"Must be one of: {valid}"
-        )
+        msg = f"Invalid severity_filter: {severity_filter!r}. Must be one of: {valid}"
         raise ValueError(msg)
 
     # Validate check_filter
     if check_filter is not None and check_filter not in AVAILABLE_CHECKS:
         valid_checks = ", ".join(sorted(AVAILABLE_CHECKS))
-        msg = (
-            f"Unknown check: {check_filter!r}. "
-            f"Available checks: {valid_checks}"
-        )
+        msg = f"Unknown check: {check_filter!r}. Available checks: {valid_checks}"
         raise ValueError(msg)
 
     # Determine which checks to run

@@ -4,12 +4,22 @@ from __future__ import annotations
 
 DEFAULT_PROJECT_CONFIG_TEMPLATE = """\
 # Lexibrarian project configuration
-# This file is created by `lexi init` and lives at .lexibrary/config.yaml
+# This file is created by `lexictl init` and lives at .lexibrary/config.yaml
 # Values here override the global config at ~/.config/lexibrarian/config.yaml
 
 # Scope root: only files under this path (relative to project root) get design files
 # Set to "src/" to restrict design file generation to your source directory
 scope_root: "."
+
+# Project name (set during lexictl init)
+project_name: ""
+
+# Agent environments configured during init (e.g., claude, cursor)
+agent_environment: []
+
+# I Was Here (IWH) configuration
+iwh:
+  enabled: true                          # Enable IWH agent trace files
 
 # LLM provider settings
 llm:
@@ -22,7 +32,6 @@ llm:
 # Per-artifact token budgets (validation targets for generated content)
 token_budgets:
   start_here_tokens: 800                 # START_HERE.md budget
-  handoff_tokens: 100                    # HANDOFF.md budget
   design_file_tokens: 400                # Full design file budget
   design_file_abridged_tokens: 100       # Abridged design file budget
   aindex_tokens: 200                     # .aindex routing table budget
@@ -38,7 +47,6 @@ ignore:
   use_gitignore: true                    # Respect .gitignore files
   additional_patterns:
     - .lexibrary/START_HERE.md
-    - .lexibrary/HANDOFF.md
     - ".lexibrary/**/*.md"
     - ".lexibrary/**/.aindex"
     - node_modules/

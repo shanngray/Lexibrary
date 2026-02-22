@@ -13,11 +13,13 @@ from lexibrarian.ignore.matcher import IgnoreMatcher
 logger = logging.getLogger(__name__)
 
 # Internal files that should never trigger re-indexing
-_INTERNAL_FILES = frozenset({
-    ".lexibrarian_cache.json",
-    ".lexibrarian.log",
-    ".lexibrarian.pid",
-})
+_INTERNAL_FILES = frozenset(
+    {
+        ".lexibrarian_cache.json",
+        ".lexibrarian.log",
+        ".lexibrarian.pid",
+    }
+)
 
 
 class LexibrarianEventHandler(FileSystemEventHandler):

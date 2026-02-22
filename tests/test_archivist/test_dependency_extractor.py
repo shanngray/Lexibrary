@@ -61,9 +61,7 @@ class TestPythonAbsoluteImports:
         (pkg / "utils.py").write_text("# utils")
 
         main_py = tmp_path / "main.py"
-        main_py.write_text(
-            "from pkg.utils import A\nfrom pkg.utils import B\n"
-        )
+        main_py.write_text("from pkg.utils import A\nfrom pkg.utils import B\n")
 
         deps = extract_dependencies(main_py, tmp_path)
         assert deps.count("src/pkg/utils.py") == 1
@@ -152,9 +150,7 @@ class TestTypeScriptImports:
         src = tmp_path / "src"
         src.mkdir()
         main_ts = src / "main.ts"
-        main_ts.write_text(
-            "import React from 'react'\nimport { useState } from 'react'\n"
-        )
+        main_ts.write_text("import React from 'react'\nimport { useState } from 'react'\n")
 
         deps = extract_dependencies(main_ts, tmp_path)
         assert deps == []

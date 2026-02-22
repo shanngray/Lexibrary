@@ -50,7 +50,7 @@ def parse_stack_post(path: Path) -> StackPost | None:
     except (yaml.YAMLError, TypeError, ValueError):
         return None
 
-    raw_body = text[fm_match.end():]
+    raw_body = text[fm_match.end() :]
     problem, evidence = _extract_problem_and_evidence(raw_body)
     answers = _extract_answers(raw_body)
 
@@ -122,9 +122,7 @@ def _extract_answers(body: str) -> list[StackAnswer]:
     return answers
 
 
-def _parse_single_answer(
-    number: int, lines: list[str]
-) -> StackAnswer | None:
+def _parse_single_answer(number: int, lines: list[str]) -> StackAnswer | None:
     """Parse a single answer block from its content lines."""
     answer_date = date.today()
     author = "unknown"

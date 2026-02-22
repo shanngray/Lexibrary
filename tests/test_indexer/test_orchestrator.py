@@ -113,7 +113,9 @@ class TestIndexRecursive:
             order.append(name)
 
         index_recursive(
-            project_root, project_root, LexibraryConfig(),
+            project_root,
+            project_root,
+            LexibraryConfig(),
             progress_callback=track_callback,
         )
 
@@ -156,7 +158,9 @@ class TestIndexRecursive:
 
         callback = MagicMock()
         index_recursive(
-            project_root, project_root, LexibraryConfig(),
+            project_root,
+            project_root,
+            LexibraryConfig(),
             progress_callback=callback,
         )
 
@@ -177,7 +181,9 @@ class TestIndexRecursive:
 
         # Should not raise
         stats = index_recursive(
-            project_root, project_root, LexibraryConfig(),
+            project_root,
+            project_root,
+            LexibraryConfig(),
             progress_callback=None,
         )
         assert stats.directories_indexed >= 1
@@ -238,7 +244,9 @@ class TestIndexRecursive:
             order.append(name)
 
         index_recursive(
-            project_root, project_root, LexibraryConfig(),
+            project_root,
+            project_root,
+            LexibraryConfig(),
             progress_callback=track_callback,
         )
 

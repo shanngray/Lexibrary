@@ -4,7 +4,7 @@
 TBD - created by archiving change phase-1-foundation. Update Purpose after archive.
 ## Requirements
 ### Requirement: Config schema with defaults
-Nested Pydantic model hierarchy (LexibraryConfig, LLMConfig, TokenizerConfig, CrawlConfig, IgnoreConfig, DaemonConfig, OutputConfig, ASTConfig) with sensible defaults. `LexibraryConfig` SHALL include a `scope_root: str` field (default: `"."`) specifying which files get design files — relative to project root. `CrawlConfig` SHALL include a `max_file_size_kb: int` field (default: `512`) — files exceeding this size are skipped during `update_project` with a log warning.
+Nested Pydantic model hierarchy (LexibraryConfig, LLMConfig, TokenizerConfig, CrawlConfig, IgnoreConfig, DaemonConfig, OutputConfig, ASTConfig) with sensible defaults. `LexibraryConfig` SHALL include a `scope_root: str` field (default: `"."`) specifying which files get design files — relative to project root. `CrawlConfig` SHALL include a `max_file_size_kb: int` field (default: `512`) — files exceeding this size are skipped during `update_project` with a log warning. `TokenBudgetConfig` SHALL NOT include a `handoff_tokens` field (removed — HANDOFF.md replaced by IWH).
 
 #### Scenario: Default scope_root
 - **WHEN** config is loaded without a `scope_root` field
@@ -18,9 +18,13 @@ Nested Pydantic model hierarchy (LexibraryConfig, LLMConfig, TokenizerConfig, Cr
 - **WHEN** config is loaded without `crawl.max_file_size_kb`
 - **THEN** `CrawlConfig.max_file_size_kb` SHALL default to `512`
 
-#### Scenario: Large file skipped
-- **WHEN** a file exceeds `max_file_size_kb` during `update_project`
-- **THEN** the file SHALL be skipped with a log warning
+#### Scenario: No handoff_tokens in TokenBudgetConfig
+- **WHEN** creating a default `TokenBudgetConfig`
+- **THEN** the model SHALL NOT have a `handoff_tokens` attribute
+
+#### Scenario: Stale handoff_tokens silently ignored
+- **WHEN** loading a config YAML that contains `token_budgets.handoff_tokens: 100`
+- **THEN** the config SHALL load without error (Pydantic `extra="ignore"` handles stale keys)
 
 ### Requirement: Config file discovery
 The system SHALL search for the project config at `.lexibrary/config.yaml` relative to the project root (found via `find_project_root()`). The global config SHALL be read from `~/.config/lexibrarian/config.yaml` (XDG base directory).
@@ -57,15 +61,15 @@ The system SHALL load YAML files via PyYAML, validate against the Pydantic schem
 - **THEN** the merged config has the project's LLM provider and global defaults for all other fields
 
 ### Requirement: Config template for initialization
-DEFAULT_CONFIG_TEMPLATE string SHALL include the new `scope_root` and `crawl.max_file_size_kb` fields with defaults and explanatory comments.
+DEFAULT_CONFIG_TEMPLATE string SHALL NOT include `handoff_tokens` in the `token_budgets` section. The template SHALL include all other existing token budget fields.
 
-#### Scenario: Template includes scope_root
+#### Scenario: Template does not include handoff_tokens
 - **WHEN** the config template is rendered
-- **THEN** it SHALL contain `scope_root: "."` with a comment explaining its purpose
+- **THEN** it SHALL NOT contain `handoff_tokens`
 
-#### Scenario: Template includes max_file_size_kb
+#### Scenario: Template includes remaining token budgets
 - **WHEN** the config template is rendered
-- **THEN** it SHALL contain `max_file_size_kb: 512` under the crawl section
+- **THEN** it SHALL contain `start_here_tokens`, `design_file_tokens`, `design_file_abridged_tokens`, `aindex_tokens`, and `concept_file_tokens`
 
 ### Requirement: Mapping strategy config stub
 The system SHALL define a `MappingConfig` Pydantic model with a `strategies` field (list of mapping rules, default empty list). The mapping strategies are not evaluated in Phase 1; the model stub locks in the YAML key name so Phase 4 can populate it without breaking existing project configs.
@@ -100,4 +104,37 @@ The field SHALL default to a comprehensive list covering: image formats (`.png`,
 #### Scenario: CrawlConfig tolerates extra fields
 - **WHEN** a `CrawlConfig` is created with an unknown extra field
 - **THEN** the extra field SHALL be ignored (not raise a validation error)
+
+### Requirement: IWHConfig model
+The system SHALL define an `IWHConfig` Pydantic model with `model_config = ConfigDict(extra="ignore")` and a single field `enabled: bool` (default: `True`).
+
+#### Scenario: IWHConfig default
+- **WHEN** creating `IWHConfig()` with no arguments
+- **THEN** `enabled` SHALL be `True`
+
+#### Scenario: IWHConfig tolerates extra fields
+- **WHEN** creating `IWHConfig` with an unknown extra field
+- **THEN** the extra field SHALL be ignored (not raise a validation error)
+
+### Requirement: IWHConfig re-exported from config package
+`IWHConfig` SHALL be importable from `lexibrarian.config`.
+
+#### Scenario: Import IWHConfig
+- **WHEN** running `from lexibrarian.config import IWHConfig`
+- **THEN** the import SHALL succeed
+
+### Requirement: Config template includes new sections
+`DEFAULT_PROJECT_CONFIG_TEMPLATE` SHALL include `project_name`, `agent_environment`, and `iwh` sections with defaults and explanatory comments.
+
+#### Scenario: Template includes project_name
+- **WHEN** the config template is rendered
+- **THEN** it SHALL contain `project_name: ""` with a comment
+
+#### Scenario: Template includes agent_environment
+- **WHEN** the config template is rendered
+- **THEN** it SHALL contain `agent_environment: []` with a comment
+
+#### Scenario: Template includes iwh section
+- **WHEN** the config template is rendered
+- **THEN** it SHALL contain an `iwh:` section with `enabled: true`
 

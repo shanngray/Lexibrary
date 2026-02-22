@@ -60,9 +60,7 @@ class LLMService:
             return FileSummaryResult(path=request.path, summary=result.summary)
         except Exception:
             logger.warning("LLM error summarizing %s", request.path, exc_info=True)
-            return FileSummaryResult(
-                path=request.path, summary="", error=True
-            )
+            return FileSummaryResult(path=request.path, summary="", error=True)
 
     async def summarize_files_batch(
         self, requests: list[FileSummaryRequest]
@@ -89,8 +87,7 @@ class LLMService:
                     len(requests),
                 )
                 return [
-                    FileSummaryResult(path=req.path, summary="", error=True)
-                    for req in requests
+                    FileSummaryResult(path=req.path, summary="", error=True) for req in requests
                 ]
             return [
                 FileSummaryResult(path=req.path, summary=batch_result.summary)
@@ -98,16 +95,9 @@ class LLMService:
             ]
         except Exception:
             logger.warning("LLM error in batch summarization", exc_info=True)
-            return [
-                FileSummaryResult(
-                    path=req.path, summary="", error=True
-                )
-                for req in requests
-            ]
+            return [FileSummaryResult(path=req.path, summary="", error=True) for req in requests]
 
-    async def summarize_directory(
-        self, request: DirectorySummaryRequest
-    ) -> str:
+    async def summarize_directory(self, request: DirectorySummaryRequest) -> str:
         """Summarize a directory. Returns fallback summary on error."""
         await self._rate_limiter.acquire()
         try:

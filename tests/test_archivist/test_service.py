@@ -210,9 +210,7 @@ class TestGenerateDesignFile:
         service = ArchivistService(rate_limiter=rate_limiter, config=anthropic_config)
 
         mock_client = MagicMock()
-        mock_client.ArchivistGenerateDesignFile = AsyncMock(
-            return_value=sample_design_file_output
-        )
+        mock_client.ArchivistGenerateDesignFile = AsyncMock(return_value=sample_design_file_output)
 
         with patch.object(service, "_get_baml_client", return_value=mock_client):
             result = await service.generate_design_file(design_file_request)
@@ -267,9 +265,7 @@ class TestGenerateDesignFile:
         )
 
         mock_client = MagicMock()
-        mock_client.ArchivistGenerateDesignFile = AsyncMock(
-            return_value=sample_design_file_output
-        )
+        mock_client.ArchivistGenerateDesignFile = AsyncMock(return_value=sample_design_file_output)
 
         with patch.object(service, "_get_baml_client", return_value=mock_client):
             result = await service.generate_design_file(request)
@@ -304,9 +300,7 @@ class TestGenerateStartHere:
         service = ArchivistService(rate_limiter=rate_limiter, config=anthropic_config)
 
         mock_client = MagicMock()
-        mock_client.ArchivistGenerateStartHere = AsyncMock(
-            return_value=sample_start_here_output
-        )
+        mock_client.ArchivistGenerateStartHere = AsyncMock(return_value=sample_start_here_output)
 
         with patch.object(service, "_get_baml_client", return_value=mock_client):
             result = await service.generate_start_here(start_here_request)
@@ -366,9 +360,7 @@ class TestRateLimiting:
         service = ArchivistService(rate_limiter=mock_limiter, config=anthropic_config)
 
         mock_client = MagicMock()
-        mock_client.ArchivistGenerateDesignFile = AsyncMock(
-            return_value=sample_design_file_output
-        )
+        mock_client.ArchivistGenerateDesignFile = AsyncMock(return_value=sample_design_file_output)
 
         with patch.object(service, "_get_baml_client", return_value=mock_client):
             await service.generate_design_file(design_file_request)
@@ -388,9 +380,7 @@ class TestRateLimiting:
         service = ArchivistService(rate_limiter=mock_limiter, config=anthropic_config)
 
         mock_client = MagicMock()
-        mock_client.ArchivistGenerateStartHere = AsyncMock(
-            return_value=sample_start_here_output
-        )
+        mock_client.ArchivistGenerateStartHere = AsyncMock(return_value=sample_start_here_output)
 
         with patch.object(service, "_get_baml_client", return_value=mock_client):
             await service.generate_start_here(start_here_request)
@@ -409,9 +399,7 @@ class TestRateLimiting:
         service = ArchivistService(rate_limiter=mock_limiter, config=anthropic_config)
 
         mock_client = MagicMock()
-        mock_client.ArchivistGenerateDesignFile = AsyncMock(
-            side_effect=RuntimeError("fail")
-        )
+        mock_client.ArchivistGenerateDesignFile = AsyncMock(side_effect=RuntimeError("fail"))
 
         with patch.object(service, "_get_baml_client", return_value=mock_client):
             result = await service.generate_design_file(design_file_request)
@@ -518,9 +506,7 @@ class TestGenerateDesignFileWithConcepts:
         )
 
         mock_client = MagicMock()
-        mock_client.ArchivistGenerateDesignFile = AsyncMock(
-            return_value=sample_design_file_output
-        )
+        mock_client.ArchivistGenerateDesignFile = AsyncMock(return_value=sample_design_file_output)
 
         with patch.object(service, "_get_baml_client", return_value=mock_client):
             result = await service.generate_design_file(request)
@@ -550,9 +536,7 @@ class TestGenerateDesignFileWithConcepts:
         )
 
         mock_client = MagicMock()
-        mock_client.ArchivistGenerateDesignFile = AsyncMock(
-            return_value=sample_design_file_output
-        )
+        mock_client.ArchivistGenerateDesignFile = AsyncMock(return_value=sample_design_file_output)
 
         with patch.object(service, "_get_baml_client", return_value=mock_client):
             result = await service.generate_design_file(request)

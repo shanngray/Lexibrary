@@ -66,9 +66,7 @@ class TestRoundTrip:
         assert parsed.evidence == original.evidence
         assert parsed.answers == []
 
-    def test_roundtrip_with_answers_and_comments(
-        self, tmp_path: Path
-    ) -> None:
+    def test_roundtrip_with_answers_and_comments(self, tmp_path: Path) -> None:
         a1 = StackAnswer(
             number=1,
             date=date(2026, 2, 21),
@@ -111,9 +109,7 @@ class TestRoundTrip:
         assert parsed.evidence == original.evidence
         assert len(parsed.answers) == 2
 
-        for orig_a, parsed_a in zip(
-            original.answers, parsed.answers, strict=True
-        ):
+        for orig_a, parsed_a in zip(original.answers, parsed.answers, strict=True):
             assert parsed_a.number == orig_a.number
             assert parsed_a.date == orig_a.date
             assert parsed_a.author == orig_a.author

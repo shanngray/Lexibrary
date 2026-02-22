@@ -77,7 +77,10 @@ class TestDesignFileRoundtrip:
         f.write_text(content)
         parsed = parse_design_file(f)
         assert parsed is not None
-        assert parsed.dependencies == ["src/lexibrarian/config/schema.py", "src/lexibrarian/utils/paths.py"]
+        assert parsed.dependencies == [
+            "src/lexibrarian/config/schema.py",
+            "src/lexibrarian/utils/paths.py",
+        ]
         assert parsed.dependents == ["src/lexibrarian/__main__.py"]
         assert parsed.tests == "See tests/test_cli.py for full coverage."
         assert parsed.complexity_warning == "High cyclomatic complexity — 12 branches."
@@ -106,9 +109,7 @@ class TestDesignFileRoundtrip:
         assert parsed_meta is not None
         design_hash_in_footer = parsed_meta.metadata.design_hash
 
-        # The design_hash should be SHA-256 of the content above the footer
-        footer_start = content.index("<!-- lexibrarian:meta")
-        body_only = content[:footer_start].rstrip("\n") + "\n"
+        # The design_hash should be SHA-256 of the content above the footer.
         # Serializer hashes the parts joined with "\n" before appending footer
         # so we just verify it's a valid 64-char hex string
         assert len(design_hash_in_footer) == 64
@@ -130,9 +131,7 @@ class TestDesignFileRoundtrip:
         assert original_hash is not None
 
         # Simulate agent edit: modify the body
-        modified_body = content.replace(
-            "def main() -> None: ...", "def main() -> int: ..."
-        )
+        modified_body = content.replace("def main() -> None: ...", "def main() -> int: ...")
         # Hash the modified content (excluding footer)
         modified_footer_start = modified_body.index("<!-- lexibrarian:meta")
         modified_pre_footer = modified_body[:modified_footer_start]

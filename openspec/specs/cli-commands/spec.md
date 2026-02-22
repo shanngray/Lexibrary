@@ -4,23 +4,23 @@
 TBD - created by archiving change lexi-cli. Update Purpose after archive.
 ## Requirements
 ### Requirement: Init command creates config file
-The `lexi init` command SHALL create a `lexibrary.toml` file in the target directory using a provider-aware template. It MUST accept a `--provider` option (default: `"anthropic"`, choices: `"anthropic"`, `"openai"`, `"ollama"`) that sets the LLM provider, model, and API key environment variable in the generated config.
+The `lexictl init` command SHALL run the interactive setup wizard to create a `.lexibrary/` directory with a dynamically generated `config.yaml`. It MUST accept a `--defaults` flag that accepts all auto-detected values without prompting (for CI/scripting use).
 
-#### Scenario: Init creates config with default provider
-- **WHEN** running `lexi init` in an empty directory
-- **THEN** a `lexibrary.toml` file is created with `provider = "anthropic"`, `model = "claude-sonnet-4-5-20250514"`, and `api_key_env = "ANTHROPIC_API_KEY"`
+#### Scenario: Init runs wizard
+- **WHEN** running `lexictl init` in a fresh directory
+- **THEN** the wizard SHALL run and create `.lexibrary/` with a config derived from wizard answers
 
-#### Scenario: Init creates config with OpenAI provider
-- **WHEN** running `lexi init --provider openai`
-- **THEN** the generated `lexibrary.toml` contains `provider = "openai"`, `model = "gpt-4o-mini"`, and `api_key_env = "OPENAI_API_KEY"`
+#### Scenario: Init with --defaults skips prompts
+- **WHEN** running `lexictl init --defaults` in a fresh directory
+- **THEN** the wizard SHALL use all detected/default values without prompting and create `.lexibrary/`
 
-#### Scenario: Init creates config with Ollama provider
-- **WHEN** running `lexi init --provider ollama`
-- **THEN** the generated `lexibrary.toml` contains `provider = "ollama"`, `model = "llama3.2"`, and `api_key_env = ""`
+#### Scenario: Init fails if already initialized
+- **WHEN** running `lexictl init` in a directory that already contains `.lexibrary/`
+- **THEN** the command SHALL print an error message pointing to `lexictl setup --update` and exit with code 1
 
-#### Scenario: Init fails if config already exists
-- **WHEN** running `lexi init` in a directory that already contains `lexibrary.toml`
-- **THEN** the command prints a warning message and exits with code 1 without modifying the existing file
+#### Scenario: Init shows creation summary
+- **WHEN** `lexictl init` completes successfully
+- **THEN** the output SHALL include a count of items created and suggest running `lexictl update`
 
 ### Requirement: Init command manages gitignore
 The `lexi init` command SHALL create or update a `.gitignore` file to include Lexibrarian-specific entries (`.aindex`, `.lexibrarian_cache.json`, `.lexibrarian.log`, `.lexibrarian.pid`).
@@ -171,7 +171,7 @@ On completion, the command SHALL print a summary via `rich.console.Console` show
 - **THEN** the output SHALL include a count of directories indexed and files found
 
 ### Requirement: Update command generates design files
-`lexi update [<path>]` SHALL generate or refresh design files for changed source files.
+`lexictl update [<path>]` SHALL generate or refresh design files for changed source files.
 - If `path` is a file → update that single file's design file
 - If `path` is a directory → update all files in that subtree within scope_root
 - If no path → update all files in the project and regenerate START_HERE.md
@@ -180,19 +180,19 @@ On completion, the command SHALL print a summary via `rich.console.Console` show
 - SHALL exit with code 0 on success, 1 on any failures
 
 #### Scenario: Update single file
-- **WHEN** `lexi update src/foo.py` is run
+- **WHEN** `lexictl update src/foo.py` is run
 - **THEN** the system SHALL generate or refresh the design file at `.lexibrary/src/foo.py.md`
 
 #### Scenario: Update directory
-- **WHEN** `lexi update src/` is run
+- **WHEN** `lexictl update src/` is run
 - **THEN** the system SHALL update design files for all changed files under `src/` within scope_root
 
 #### Scenario: Update entire project
-- **WHEN** `lexi update` is run with no arguments
+- **WHEN** `lexictl update` is run with no arguments
 - **THEN** the system SHALL update all changed files and regenerate START_HERE.md
 
 #### Scenario: No project found
-- **WHEN** `lexi update` is run outside a Lexibrarian project (no `.lexibrary/`)
+- **WHEN** `lexictl update` is run outside a Lexibrarian project (no `.lexibrary/`)
 - **THEN** the system SHALL print an error and exit with code 1
 
 ### Requirement: Lookup command returns design file
@@ -200,7 +200,7 @@ On completion, the command SHALL print a summary via `rich.console.Console` show
 - SHALL check scope: if file is outside `scope_root`, print message and exit
 - SHALL compute mirror path and read the design file
 - If design file exists → print its content via Rich Console
-- If design file doesn't exist → suggest running `lexi update <file>`
+- If design file doesn't exist → suggest running `lexictl update <file>`
 - SHALL check staleness: if source_hash differs from current file hash, print warning before content
 - SHALL walk from the file's parent directory up to `scope_root`, parsing each `.aindex` for `local_conventions`
 - If any conventions are found → append an `## Applicable Conventions` section grouped by source directory
@@ -212,11 +212,11 @@ On completion, the command SHALL print a summary via `rich.console.Console` show
 
 #### Scenario: Lookup missing design file
 - **WHEN** `lexi lookup src/foo.py` is run and no design file exists
-- **THEN** the system SHALL suggest running `lexi update src/foo.py`
+- **THEN** the system SHALL suggest running `lexictl update src/foo.py`
 
 #### Scenario: Lookup shows staleness warning
 - **WHEN** `lexi lookup src/foo.py` is run and the source file has changed since the design file was generated
-- **THEN** a staleness warning SHALL be displayed before the content
+- **THEN** a staleness warning SHALL be displayed before the content, suggesting `lexictl update`
 
 #### Scenario: Lookup outside scope_root
 - **WHEN** `lexi lookup scripts/deploy.sh` is run and `scripts/` is outside scope_root
@@ -241,50 +241,113 @@ On completion, the command SHALL print a summary via `rich.console.Console` show
 - **THEN** the `.aindex` billboard for `src/auth/` SHALL be updated with the new description
 
 ### Requirement: Validate command runs library checks
-The `lexi validate` command SHALL run all validation checks via `validate_library()` and display the results using Rich rendering. It SHALL exit with code 0 (clean), 1 (errors found), or 2 (warnings only, no errors).
+The `lexictl validate` command SHALL run all validation checks via `validate_library()` and display the results using Rich rendering. It SHALL exit with code 0 (clean), 1 (errors found), or 2 (warnings only, no errors).
 
 #### Scenario: Validate clean library exits 0
-- **WHEN** running `lexi validate` on a library with no issues
+- **WHEN** running `lexictl validate` on a library with no issues
 - **THEN** the output shows "Summary: 0 errors, 0 warnings, 0 info" and exit code is 0
 
 #### Scenario: Validate with errors exits 1
-- **WHEN** running `lexi validate` on a library with broken wikilinks
+- **WHEN** running `lexictl validate` on a library with broken wikilinks
 - **THEN** the output shows the errors grouped under "Errors" and exit code is 1
 
 #### Scenario: Validate with only warnings exits 2
-- **WHEN** running `lexi validate` on a library with stale design files but no broken references
+- **WHEN** running `lexictl validate` on a library with stale design files but no broken references
 - **THEN** the output shows warnings grouped under "Warnings" and exit code is 2
 
 ### Requirement: Validate supports severity filter
-The `lexi validate --severity <level>` option SHALL filter results to only show issues at or above the given severity level (error > warning > info).
+The `lexictl validate --severity <level>` option SHALL filter results to only show issues at or above the given severity level (error > warning > info).
 
 #### Scenario: Severity filter hides info
-- **WHEN** running `lexi validate --severity warning`
+- **WHEN** running `lexictl validate --severity warning`
 - **THEN** only error and warning issues are displayed; info issues are excluded
 
 #### Scenario: Severity filter shows errors only
-- **WHEN** running `lexi validate --severity error`
+- **WHEN** running `lexictl validate --severity error`
 - **THEN** only error issues are displayed
 
 ### Requirement: Validate supports single check mode
-The `lexi validate --check <name>` option SHALL run only the named check function.
+The `lexictl validate --check <name>` option SHALL run only the named check function.
 
 #### Scenario: Single check mode
-- **WHEN** running `lexi validate --check hash_freshness`
+- **WHEN** running `lexictl validate --check hash_freshness`
 - **THEN** only the hash freshness check runs and its results are displayed
 
 #### Scenario: Invalid check name
-- **WHEN** running `lexi validate --check nonexistent`
+- **WHEN** running `lexictl validate --check nonexistent`
 - **THEN** an error message lists the available check names and exits with code 1
 
 ### Requirement: Validate supports JSON output
-The `lexi validate --json` option SHALL output the validation report as valid JSON to stdout, suitable for programmatic consumption.
+The `lexictl validate --json` option SHALL output the validation report as valid JSON to stdout, suitable for programmatic consumption.
 
 #### Scenario: JSON output is valid
-- **WHEN** running `lexi validate --json`
+- **WHEN** running `lexictl validate --json`
 - **THEN** stdout contains valid JSON with "issues" and "summary" keys
 
 #### Scenario: JSON output with severity filter
-- **WHEN** running `lexi validate --json --severity warning`
+- **WHEN** running `lexictl validate --json --severity warning`
 - **THEN** the JSON output only contains issues at warning or error severity
+
+### Requirement: Concept link suggests lexictl update
+The `lexi concept link <concept> <file>` command SHALL suggest running `lexictl update <file>` (not `lexi update`) when the target file has no design file.
+
+#### Scenario: Concept link missing design file suggestion
+- **WHEN** running `lexi concept link Authentication src/auth.py` and no design file exists for `src/auth.py`
+- **THEN** the output suggests running `lexictl update src/auth.py`
+
+### Requirement: Cross-reference strings use correct CLI
+All error messages, help text, and suggestions in CLI commands SHALL reference the correct CLI (`lexi` for agent commands, `lexictl` for maintenance commands). Specifically:
+- `require_project_root()` error message SHALL reference `lexictl init`
+- `init --agent` help text SHALL reference `lexictl setup`
+- Lookup missing/stale design file messages SHALL reference `lexictl update`
+- Status quiet mode output SHALL reference `lexictl validate`
+- Status dashboard validation section SHALL reference `lexictl validate`
+
+#### Scenario: Project root error references lexictl init
+- **WHEN** any command that requires a project root is run outside a Lexibrarian project
+- **THEN** the error message contains "lexictl init" (not "lexi init")
+
+#### Scenario: Init --agent help references lexictl setup
+- **WHEN** running `lexictl init --agent claude`
+- **THEN** the output contains "lexictl setup" (not "lexi setup")
+
+#### Scenario: Lookup missing file references lexictl update
+- **WHEN** running `lexi lookup` on a file with no design file
+- **THEN** the suggestion contains "lexictl update" (not "lexi update")
+
+### Requirement: lexi help lists only agent commands
+The `lexi --help` output SHALL list only agent-facing commands: `lookup`, `index`, `describe`, `concepts`, `concept`, `stack`, `search`.
+
+#### Scenario: lexi help shows agent commands
+- **WHEN** running `lexi --help`
+- **THEN** the output lists `lookup`, `index`, `describe`, `concepts`, `concept`, `stack`, `search`
+
+#### Scenario: lexi help does NOT show maintenance commands
+- **WHEN** running `lexi --help`
+- **THEN** the output does NOT contain `init`, `update`, `validate`, `status`, `setup`, or `daemon`
+
+### Requirement: Re-init guard
+`lexictl init` SHALL check for an existing `.lexibrary/` directory before running the wizard. If found, it SHALL print an error message directing the user to `lexictl setup --update` and exit with code 1.
+
+#### Scenario: Re-init blocked
+- **WHEN** running `lexictl init` and `.lexibrary/` already exists
+- **THEN** the command SHALL print `"Project already initialised"` and reference `lexictl setup --update`
+
+### Requirement: Non-TTY detection
+`lexictl init` SHALL detect when `stdin` is not a TTY. In non-interactive environments without `--defaults`, it SHALL print a message advising the user to use `--defaults` and exit with code 1.
+
+#### Scenario: Non-TTY without --defaults
+- **WHEN** `lexictl init` is invoked in a non-TTY environment without `--defaults`
+- **THEN** the command SHALL print a message about non-interactive mode and exit with code 1
+
+#### Scenario: Non-TTY with --defaults succeeds
+- **WHEN** `lexictl init --defaults` is invoked in a non-TTY environment
+- **THEN** the command SHALL proceed normally using defaults
+
+### Requirement: Wizard cancellation exits cleanly
+If the user cancels at the wizard summary step, `lexictl init` SHALL exit with code 1 without creating any files.
+
+#### Scenario: User cancels wizard
+- **WHEN** the user answers "No" at the wizard summary step
+- **THEN** no `.lexibrary/` directory SHALL be created and exit code SHALL be 1
 

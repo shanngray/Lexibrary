@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from lexibrarian.exceptions import LexibraryNotFoundError
-from lexibrarian.utils.paths import aindex_path, mirror_path
+from lexibrarian.utils.paths import aindex_path, iwh_path, mirror_path
 from lexibrarian.utils.root import find_project_root
 
 
@@ -83,3 +83,32 @@ def test_aindex_path_relative(tmp_path: Path) -> None:
     """aindex_path accepts a project-relative path."""
     result = aindex_path(tmp_path, Path("src/auth"))
     assert result == tmp_path / ".lexibrary" / "src" / "auth" / ".aindex"
+
+
+# ---------------------------------------------------------------------------
+# iwh_path
+# ---------------------------------------------------------------------------
+
+
+def test_iwh_path_subdirectory(tmp_path: Path) -> None:
+    """iwh_path maps a subdirectory to .lexibrary/<dir>/.iwh."""
+    result = iwh_path(tmp_path, tmp_path / "src" / "auth")
+    assert result == tmp_path / ".lexibrary" / "src" / "auth" / ".iwh"
+
+
+def test_iwh_path_project_root(tmp_path: Path) -> None:
+    """iwh_path maps the project root itself to .lexibrary/.iwh."""
+    result = iwh_path(tmp_path, tmp_path)
+    assert result == tmp_path / ".lexibrary" / ".iwh"
+
+
+def test_iwh_path_nested_directory(tmp_path: Path) -> None:
+    """iwh_path preserves full directory depth for nested paths."""
+    result = iwh_path(tmp_path, tmp_path / "src" / "auth" / "middleware")
+    assert result == tmp_path / ".lexibrary" / "src" / "auth" / "middleware" / ".iwh"
+
+
+def test_iwh_path_relative(tmp_path: Path) -> None:
+    """iwh_path accepts a project-relative path."""
+    result = iwh_path(tmp_path, Path("src/auth"))
+    assert result == tmp_path / ".lexibrary" / "src" / "auth" / ".iwh"

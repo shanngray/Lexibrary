@@ -1,96 +1,85 @@
-"""CLI application for Lexibrarian (v2)."""
+"""Agent-facing CLI for Lexibrarian — lookups, search, concepts, and Stack Q&A."""
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
 from pathlib import Path
 from typing import Annotated
 
 import typer
-from rich.console import Console
 
-from lexibrarian.exceptions import LexibraryNotFoundError
-from lexibrarian.init.scaffolder import create_lexibrary_skeleton
-from lexibrarian.utils.root import find_project_root
+from lexibrarian.cli._shared import console, require_project_root
 
-console = Console()
-
-app = typer.Typer(
-    name="lexibrarian",
+lexi_app = typer.Typer(
+    name="lexi",
     help=(
-        "AI-friendly codebase indexer. Maintains a .lexibrary/ library for LLM context navigation."
+        "Agent-facing CLI for Lexibrarian. "
+        "Provides lookups, search, concepts, and Stack Q&A for LLM context navigation."
     ),
     no_args_is_help=True,
 )
 
 # ---------------------------------------------------------------------------
-# Stack sub-group
+# Sub-groups
 # ---------------------------------------------------------------------------
 stack_app = typer.Typer(help="Stack Q&A management commands.")
-app.add_typer(stack_app, name="stack")
+lexi_app.add_typer(stack_app, name="stack")
+
+concept_app = typer.Typer(help="Concept management commands.")
+lexi_app.add_typer(concept_app, name="concept")
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Stack helpers (private, used only by stack commands — D2)
 # ---------------------------------------------------------------------------
 
 
-def _require_project_root() -> Path:
-    """Resolve the project root or exit with a friendly error."""
-    try:
-        return find_project_root()
-    except LexibraryNotFoundError:
-        console.print(
-            "[red]No .lexibrary/ directory found.[/red] Run [cyan]lexi init[/cyan] to create one."
-        )
-        raise typer.Exit(1) from None
+def _stack_dir(project_root: Path) -> Path:
+    """Return the .lexibrary/stack/ directory, creating it if needed."""
+    d = project_root / ".lexibrary" / "stack"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
-def _stub(name: str) -> None:
-    """Print a standard stub message for unimplemented commands."""
-    _require_project_root()
-    console.print(f"[yellow]Not yet implemented.[/yellow]  ([dim]{name}[/dim])")
+def _next_stack_id(stack_dir: Path) -> int:
+    """Scan existing ST-NNN-*.md files and return the next available number."""
+    import re as _re  # noqa: PLC0415
+
+    max_num = 0
+    for f in stack_dir.glob("ST-*-*.md"):
+        m = _re.match(r"ST-(\d+)-", f.name)
+        if m:
+            max_num = max(max_num, int(m.group(1)))
+    return max_num + 1
 
 
-# ---------------------------------------------------------------------------
-# init — fully implemented
-# ---------------------------------------------------------------------------
+def _slugify(title: str) -> str:
+    """Convert a title to a URL-friendly slug."""
+    import re as _re  # noqa: PLC0415
+
+    slug = title.lower()
+    slug = _re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = slug.strip("-")
+    # Collapse consecutive hyphens
+    slug = _re.sub(r"-+", "-", slug)
+    return slug[:50]
 
 
-@app.command()
-def init(
-    *,
-    agent: Annotated[
-        str | None,
-        typer.Option(
-            help="Agent environment to configure (cursor, claude, codex). "
-            "Handled by `lexi setup`; accepted here for convenience.",
-        ),
-    ] = None,
-) -> None:
-    """Initialize Lexibrarian in a project. Creates .lexibrary/ directory."""
-    project_root = Path.cwd()
-    created = create_lexibrary_skeleton(project_root)
-
-    if not created:
-        console.print("[yellow].lexibrary/ already exists.[/yellow] No files were overwritten.")
-    else:
-        console.print(f"[green]Created .lexibrary/ skeleton[/green] ({len(created)} items)")
-
-    if agent:
-        console.print(
-            f"[dim]--agent={agent} noted. Run [cyan]lexi setup {agent}[/cyan] "
-            "to install agent environment rules.[/dim]"
-        )
+def _find_post_path(project_root: Path, post_id: str) -> Path | None:
+    """Find the file path for a post ID (e.g. 'ST-001')."""
+    stack_dir = project_root / ".lexibrary" / "stack"
+    if not stack_dir.is_dir():
+        return None
+    for f in stack_dir.glob(f"{post_id}-*.md"):
+        return f
+    return None
 
 
 # ---------------------------------------------------------------------------
-# Stub commands
+# lookup
 # ---------------------------------------------------------------------------
 
 
-@app.command()
+@lexi_app.command()
 def lookup(
     file: Annotated[
         Path,
@@ -98,11 +87,13 @@ def lookup(
     ],
 ) -> None:
     """Return the design file for a source file."""
-    from lexibrarian.artifacts.design_file_parser import parse_design_file_metadata
-    from lexibrarian.config.loader import load_config
-    from lexibrarian.utils.paths import mirror_path
+    import hashlib  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    from lexibrarian.artifacts.design_file_parser import parse_design_file_metadata  # noqa: PLC0415
+    from lexibrarian.config.loader import load_config  # noqa: PLC0415
+    from lexibrarian.utils.paths import mirror_path  # noqa: PLC0415
+
+    project_root = require_project_root()
     config = load_config(project_root)
 
     target = Path(file).resolve()
@@ -124,7 +115,7 @@ def lookup(
     if not design_path.exists():
         console.print(
             f"[yellow]No design file found for[/yellow] {file}\n"
-            f"Run [cyan]lexi update {file}[/cyan] to generate one."
+            f"Run [cyan]lexictl update {file}[/cyan] to generate one."
         )
         raise typer.Exit(1)
 
@@ -137,7 +128,7 @@ def lookup(
                 console.print(
                     "[yellow]Warning:[/yellow] Source file has changed since "
                     "the design file was last generated. "
-                    "Run [cyan]lexi update " + str(file) + "[/cyan] to refresh.\n"
+                    "Run [cyan]lexictl update " + str(file) + "[/cyan] to refresh.\n"
                 )
         except OSError:
             pass
@@ -147,8 +138,8 @@ def lookup(
     console.print(content)
 
     # Walk parent .aindex files for inherited conventions
-    from lexibrarian.artifacts.aindex_parser import parse_aindex
-    from lexibrarian.utils.paths import aindex_path
+    from lexibrarian.artifacts.aindex_parser import parse_aindex  # noqa: PLC0415
+    from lexibrarian.utils.paths import aindex_path  # noqa: PLC0415
 
     conventions_by_dir: list[tuple[str, list[str]]] = []
     current_dir = target.parent
@@ -179,7 +170,12 @@ def lookup(
             console.print()
 
 
-@app.command()
+# ---------------------------------------------------------------------------
+# index
+# ---------------------------------------------------------------------------
+
+
+@lexi_app.command()
 def index(
     directory: Annotated[
         Path,
@@ -192,12 +188,12 @@ def index(
     ] = False,
 ) -> None:
     """Generate .aindex file(s) for a directory."""
-    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from rich.progress import Progress, SpinnerColumn, TextColumn  # noqa: PLC0415
 
-    from lexibrarian.config.loader import load_config
-    from lexibrarian.indexer.orchestrator import index_directory, index_recursive
+    from lexibrarian.config.loader import load_config  # noqa: PLC0415
+    from lexibrarian.indexer.orchestrator import index_directory, index_recursive  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
 
     # Resolve directory relative to cwd
     target = Path(directory).resolve()
@@ -250,11 +246,12 @@ def index(
         console.print(f"[green]Wrote[/green] {output_path}")
 
 
-concept_app = typer.Typer(help="Concept management commands.")
-app.add_typer(concept_app, name="concept")
+# ---------------------------------------------------------------------------
+# concepts
+# ---------------------------------------------------------------------------
 
 
-@app.command()
+@lexi_app.command()
 def concepts(
     topic: Annotated[
         str | None,
@@ -262,15 +259,15 @@ def concepts(
     ] = None,
 ) -> None:
     """List or search concept files."""
-    from rich.table import Table
+    from rich.table import Table  # noqa: PLC0415
 
-    from lexibrarian.wiki.index import ConceptIndex
+    from lexibrarian.wiki.index import ConceptIndex  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
     concepts_dir = project_root / ".lexibrary" / "concepts"
-    index = ConceptIndex.load(concepts_dir)
+    idx = ConceptIndex.load(concepts_dir)
 
-    if len(index) == 0:
+    if len(idx) == 0:
         console.print(
             "[yellow]No concepts found.[/yellow] "
             "Run [cyan]lexi concept new <name>[/cyan] to create one."
@@ -278,13 +275,13 @@ def concepts(
         return
 
     if topic:
-        results = index.search(topic)
+        results = idx.search(topic)
         if not results:
             console.print(f"[yellow]No concepts matching[/yellow] '{topic}'")
             return
         title = f"Concepts matching '{topic}'"
     else:
-        results = [c for name in index.names() if (c := index.find(name)) is not None]
+        results = [c for name in idx.names() if (c := idx.find(name)) is not None]
         title = "All concepts"
 
     table = Table(title=title)
@@ -310,6 +307,11 @@ def concepts(
     console.print(table)
 
 
+# ---------------------------------------------------------------------------
+# concept new
+# ---------------------------------------------------------------------------
+
+
 @concept_app.command("new")
 def concept_new(
     name: Annotated[
@@ -323,9 +325,12 @@ def concept_new(
     ] = None,
 ) -> None:
     """Create a new concept file from template."""
-    from lexibrarian.wiki.template import concept_file_path, render_concept_template
+    from lexibrarian.wiki.template import (  # noqa: PLC0415
+        concept_file_path,
+        render_concept_template,
+    )
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
     concepts_dir = project_root / ".lexibrary" / "concepts"
     concepts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -341,6 +346,11 @@ def concept_new(
     console.print(f"[green]Created[/green] {target.relative_to(project_root)}")
 
 
+# ---------------------------------------------------------------------------
+# concept link
+# ---------------------------------------------------------------------------
+
+
 @concept_app.command("link")
 def concept_link(
     concept_name: Annotated[
@@ -353,21 +363,21 @@ def concept_link(
     ],
 ) -> None:
     """Add a wikilink to a source file's design file."""
-    from lexibrarian.artifacts.design_file_parser import parse_design_file
-    from lexibrarian.artifacts.design_file_serializer import serialize_design_file
-    from lexibrarian.utils.paths import mirror_path
-    from lexibrarian.wiki.index import ConceptIndex
+    from lexibrarian.artifacts.design_file_parser import parse_design_file  # noqa: PLC0415
+    from lexibrarian.artifacts.design_file_serializer import serialize_design_file  # noqa: PLC0415
+    from lexibrarian.utils.paths import mirror_path  # noqa: PLC0415
+    from lexibrarian.wiki.index import ConceptIndex  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
 
     # Verify concept exists
     concepts_dir = project_root / ".lexibrary" / "concepts"
-    index = ConceptIndex.load(concepts_dir)
-    if concept_name not in index:
+    idx = ConceptIndex.load(concepts_dir)
+    if concept_name not in idx:
         console.print(
             f"[red]Concept not found:[/red] '{concept_name}'\n"
-            "Available concepts: " + ", ".join(index.names())
-            if index.names()
+            "Available concepts: " + ", ".join(idx.names())
+            if idx.names()
             else f"[red]Concept not found:[/red] '{concept_name}'\n"
             "No concepts exist yet. Run [cyan]lexi concept new <name>[/cyan] first."
         )
@@ -383,7 +393,7 @@ def concept_link(
     if not design_path.exists():
         console.print(
             f"[yellow]No design file found for[/yellow] {source_file}\n"
-            f"Run [cyan]lexi update {source_file}[/cyan] to generate one first."
+            f"Run [cyan]lexictl update {source_file}[/cyan] to generate one first."
         )
         raise typer.Exit(1)
 
@@ -415,47 +425,6 @@ def concept_link(
 # ---------------------------------------------------------------------------
 
 
-def _stack_dir(project_root: Path) -> Path:
-    """Return the .lexibrary/stack/ directory, creating it if needed."""
-    d = project_root / ".lexibrary" / "stack"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _next_stack_id(stack_dir: Path) -> int:
-    """Scan existing ST-NNN-*.md files and return the next available number."""
-    import re as _re  # noqa: PLC0415
-
-    max_num = 0
-    for f in stack_dir.glob("ST-*-*.md"):
-        m = _re.match(r"ST-(\d+)-", f.name)
-        if m:
-            max_num = max(max_num, int(m.group(1)))
-    return max_num + 1
-
-
-def _slugify(title: str) -> str:
-    """Convert a title to a URL-friendly slug."""
-    import re as _re  # noqa: PLC0415
-
-    slug = title.lower()
-    slug = _re.sub(r"[^a-z0-9]+", "-", slug)
-    slug = slug.strip("-")
-    # Collapse consecutive hyphens
-    slug = _re.sub(r"-+", "-", slug)
-    return slug[:50]
-
-
-def _find_post_path(project_root: Path, post_id: str) -> Path | None:
-    """Find the file path for a post ID (e.g. 'ST-001')."""
-    stack_dir = project_root / ".lexibrary" / "stack"
-    if not stack_dir.is_dir():
-        return None
-    for f in stack_dir.glob(f"{post_id}-*.md"):
-        return f
-    return None
-
-
 @stack_app.command("post")
 def stack_post(
     *,
@@ -481,9 +450,9 @@ def stack_post(
     ] = None,
 ) -> None:
     """Create a new Stack post with auto-assigned ID."""
-    from lexibrarian.stack.template import render_post_template
+    from lexibrarian.stack.template import render_post_template  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
     sd = _stack_dir(project_root)
 
     if not tag:
@@ -540,11 +509,11 @@ def stack_search(
     ] = None,
 ) -> None:
     """Search Stack posts by query and/or filters."""
-    from rich.table import Table
+    from rich.table import Table  # noqa: PLC0415
 
-    from lexibrarian.stack.index import StackIndex
+    from lexibrarian.stack.index import StackIndex  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
     idx = StackIndex.build(project_root)
 
     # Start with all or query results
@@ -610,9 +579,9 @@ def stack_answer(
     ] = "user",
 ) -> None:
     """Append a new answer to a Stack post."""
-    from lexibrarian.stack.mutations import add_answer
+    from lexibrarian.stack.mutations import add_answer  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
     post_path = _find_post_path(project_root, post_id)
 
     if post_path is None:
@@ -649,9 +618,9 @@ def stack_vote(
     ] = "user",
 ) -> None:
     """Record an upvote or downvote on a post or answer."""
-    from lexibrarian.stack.mutations import record_vote
+    from lexibrarian.stack.mutations import record_vote  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
 
     if direction not in ("up", "down"):
         console.print("[red]Direction must be 'up' or 'down'.[/red]")
@@ -707,9 +676,9 @@ def stack_accept(
     ],
 ) -> None:
     """Mark an answer as accepted and set the post to resolved."""
-    from lexibrarian.stack.mutations import accept_answer
+    from lexibrarian.stack.mutations import accept_answer  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
     post_path = _find_post_path(project_root, post_id)
 
     if post_path is None:
@@ -733,12 +702,12 @@ def stack_view(
     ],
 ) -> None:
     """Display the full content of a Stack post."""
-    from rich.markdown import Markdown
-    from rich.panel import Panel
+    from rich.markdown import Markdown  # noqa: PLC0415
+    from rich.panel import Panel  # noqa: PLC0415
 
-    from lexibrarian.stack.parser import parse_stack_post
+    from lexibrarian.stack.parser import parse_stack_post  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
     post_path = _find_post_path(project_root, post_id)
 
     if post_path is None:
@@ -819,11 +788,11 @@ def stack_list(
     ] = None,
 ) -> None:
     """List Stack posts with optional filters."""
-    from rich.table import Table
+    from rich.table import Table  # noqa: PLC0415
 
-    from lexibrarian.stack.index import StackIndex
+    from lexibrarian.stack.index import StackIndex  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
     idx = StackIndex.build(project_root)
 
     results = list(idx)
@@ -864,138 +833,12 @@ def stack_list(
     console.print(table)
 
 
-@app.command()
-def search(
-    query: Annotated[
-        str | None,
-        typer.Argument(help="Free-text search query."),
-    ] = None,
-    *,
-    tag: Annotated[
-        str | None,
-        typer.Option("--tag", help="Filter by tag across all artifact types."),
-    ] = None,
-    scope: Annotated[
-        str | None,
-        typer.Option("--scope", help="Filter by file scope path."),
-    ] = None,
-) -> None:
-    """Search across concepts, design files, and Stack posts."""
-    from lexibrarian.search import unified_search
-
-    if query is None and tag is None and scope is None:
-        console.print("[yellow]Provide a query, --tag, or --scope to search.[/yellow]")
-        raise typer.Exit(1)
-
-    project_root = _require_project_root()
-    results = unified_search(project_root, query=query, tag=tag, scope=scope)
-
-    if not results.has_results():
-        console.print("[yellow]No results found.[/yellow]")
-        return
-
-    results.render(console)
+# ---------------------------------------------------------------------------
+# describe
+# ---------------------------------------------------------------------------
 
 
-@app.command()
-def update(
-    path: Annotated[
-        Path | None,
-        typer.Argument(help="File or directory to update. Omit to update entire project."),
-    ] = None,
-) -> None:
-    """Re-index changed files and regenerate design files."""
-    from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn
-
-    from lexibrarian.archivist.pipeline import UpdateStats, update_file, update_project
-    from lexibrarian.archivist.service import ArchivistService
-    from lexibrarian.config.loader import load_config
-    from lexibrarian.llm.rate_limiter import RateLimiter
-
-    project_root = _require_project_root()
-    config = load_config(project_root)
-    rate_limiter = RateLimiter()
-    archivist = ArchivistService(rate_limiter=rate_limiter, config=config.llm)
-
-    if path is not None:
-        target = Path(path).resolve()
-
-        # Validate target exists
-        if not target.exists():
-            console.print(f"[red]Path not found:[/red] {path}")
-            raise typer.Exit(1)
-
-        # Validate target is within project root
-        try:
-            target.relative_to(project_root)
-        except ValueError:
-            console.print(
-                f"[red]Path is outside the project root:[/red] {path}\nProject root: {project_root}"
-            )
-            raise typer.Exit(1) from None
-
-        if target.is_file():
-            # Single file update
-            console.print(f"Updating design file for [cyan]{path}[/cyan]...")
-            result = asyncio.run(update_file(target, project_root, config, archivist))
-            if result.failed:
-                console.print(f"[red]Failed[/red] to update design file for {path}")
-                raise typer.Exit(1)
-            console.print(f"[green]Done.[/green] Change level: {result.change.value}")
-            return
-
-        # Directory update -- update all files in subtree
-        # Delegate to update_project but the scope is effectively the whole project;
-        # the pipeline already filters by scope_root. We run the full pipeline.
-        # For directory-scoped updates we run update_project (it respects scope_root).
-
-    # Project or directory update with progress bar
-    stats = UpdateStats()
-
-    with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Updating design files...", total=None)
-
-        def _progress_callback(file_path: Path, change_level: object) -> None:
-            progress.update(
-                task,
-                advance=1,
-                description=f"Processing {file_path.name}",
-            )
-
-        stats = asyncio.run(
-            update_project(project_root, config, archivist, progress_callback=_progress_callback)
-        )
-
-    if stats.start_here_failed:
-        console.print("[red]Failed to regenerate START_HERE.md.[/red]")
-    else:
-        console.print("[green]START_HERE.md regenerated.[/green]")
-
-    # Print summary stats
-    console.print()
-    console.print("[bold]Update summary:[/bold]")
-    console.print(f"  Files scanned:       {stats.files_scanned}")
-    console.print(f"  Files unchanged:     {stats.files_unchanged}")
-    console.print(f"  Files created:       {stats.files_created}")
-    console.print(f"  Files updated:       {stats.files_updated}")
-    console.print(f"  Files agent-updated: {stats.files_agent_updated}")
-    if stats.files_failed:
-        console.print(f"  [red]Files failed:       {stats.files_failed}[/red]")
-    if stats.aindex_refreshed:
-        console.print(f"  .aindex refreshed:   {stats.aindex_refreshed}")
-    if stats.token_budget_warnings:
-        console.print(f"  [yellow]Token budget warnings: {stats.token_budget_warnings}[/yellow]")
-
-    if stats.files_failed:
-        raise typer.Exit(1)
-
-
-@app.command()
+@lexi_app.command()
 def describe(
     directory: Annotated[
         Path,
@@ -1007,11 +850,11 @@ def describe(
     ],
 ) -> None:
     """Update the billboard description in a directory's .aindex file."""
-    from lexibrarian.artifacts.aindex_parser import parse_aindex
-    from lexibrarian.artifacts.aindex_serializer import serialize_aindex
-    from lexibrarian.utils.paths import aindex_path
+    from lexibrarian.artifacts.aindex_parser import parse_aindex  # noqa: PLC0415
+    from lexibrarian.artifacts.aindex_serializer import serialize_aindex  # noqa: PLC0415
+    from lexibrarian.utils.paths import aindex_path  # noqa: PLC0415
 
-    project_root = _require_project_root()
+    project_root = require_project_root()
 
     target = Path(directory).resolve()
 
@@ -1057,284 +900,39 @@ def describe(
     console.print(f"[green]Updated[/green] billboard for [cyan]{directory}[/cyan]")
 
 
-@app.command()
-def validate(
-    *,
-    severity: Annotated[
+# ---------------------------------------------------------------------------
+# search
+# ---------------------------------------------------------------------------
+
+
+@lexi_app.command()
+def search(
+    query: Annotated[
         str | None,
-        typer.Option(
-            "--severity",
-            help="Minimum severity to report: error, warning, or info.",
-        ),
-    ] = None,
-    check: Annotated[
-        str | None,
-        typer.Option(
-            "--check",
-            help="Run only the named check (see available checks below).",
-        ),
-    ] = None,
-    json_output: Annotated[
-        bool,
-        typer.Option(
-            "--json",
-            help="Output results as JSON instead of Rich tables.",
-        ),
-    ] = False,
-) -> None:
-    """Run consistency checks on the library."""
-    import json as _json  # noqa: PLC0415
-
-    from lexibrarian.validator import AVAILABLE_CHECKS, validate_library
-
-    project_root = _require_project_root()
-    lexibrary_dir = project_root / ".lexibrary"
-
-    try:
-        report = validate_library(
-            project_root,
-            lexibrary_dir,
-            severity_filter=severity,
-            check_filter=check,
-        )
-    except ValueError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        # Show available checks if an unknown check was requested
-        if check is not None and check not in AVAILABLE_CHECKS:
-            console.print(
-                "[dim]Available checks:[/dim] "
-                + ", ".join(sorted(AVAILABLE_CHECKS))
-            )
-        raise typer.Exit(1) from None
-
-    if json_output:
-        console.print(_json.dumps(report.to_dict(), indent=2))
-    else:
-        report.render(console)
-
-    raise typer.Exit(report.exit_code())
-
-
-@app.command()
-def status(
-    path: Annotated[
-        Path | None,
-        typer.Argument(help="Project directory to check."),
+        typer.Argument(help="Free-text search query."),
     ] = None,
     *,
-    quiet: Annotated[
-        bool,
-        typer.Option("--quiet", "-q", help="Single-line output for hooks/CI."),
-    ] = False,
-) -> None:
-    """Show library health and staleness summary."""
-    from datetime import datetime, timezone  # noqa: PLC0415
-
-    from lexibrarian.artifacts.design_file_parser import (  # noqa: PLC0415
-        parse_design_file_metadata,
-    )
-    from lexibrarian.config.loader import load_config  # noqa: PLC0415
-    from lexibrarian.stack.parser import parse_stack_post  # noqa: PLC0415
-    from lexibrarian.validator import validate_library  # noqa: PLC0415
-    from lexibrarian.wiki.index import ConceptIndex  # noqa: PLC0415
-    from lexibrarian.wiki.parser import parse_concept_file  # noqa: PLC0415
-
-    project_root = _require_project_root()
-    lexibrary_dir = project_root / ".lexibrary"
-
-    # --- Artifact counts ---
-    # Design files: count .md files in the mirror tree (exclude concepts/ and stack/)
-    design_dir = lexibrary_dir
-    design_files: list[Path] = []
-    stale_count = 0
-    latest_generated: datetime | None = None
-
-    for md_path in sorted(design_dir.rglob("*.md")):
-        # Skip non-design-file directories
-        rel = md_path.relative_to(lexibrary_dir)
-        parts = rel.parts
-        if parts[0] in ("concepts", "stack"):
-            continue
-        # Skip known non-design files
-        if md_path.name in ("START_HERE.md", "HANDOFF.md"):
-            continue
-        meta = parse_design_file_metadata(md_path)
-        if meta is not None:
-            design_files.append(md_path)
-            # Check staleness via source hash
-            source_path = project_root / meta.source
-            if source_path.exists():
-                current_hash = hashlib.sha256(
-                    source_path.read_bytes()
-                ).hexdigest()
-                if current_hash != meta.source_hash:
-                    stale_count += 1
-            # Track latest generated timestamp
-            if latest_generated is None or meta.generated > latest_generated:
-                latest_generated = meta.generated
-
-    total_designs = len(design_files)
-
-    # Concepts: count by status
-    concepts_dir = lexibrary_dir / "concepts"
-    concept_counts: dict[str, int] = {"active": 0, "deprecated": 0, "draft": 0}
-    if concepts_dir.is_dir():
-        for md_path in sorted(concepts_dir.glob("*.md")):
-            concept = parse_concept_file(md_path)
-            if concept is not None:
-                s = concept.frontmatter.status
-                if s in concept_counts:
-                    concept_counts[s] += 1
-
-    total_concepts = sum(concept_counts.values())
-
-    # Stack posts: count by status
-    stack_dir = lexibrary_dir / "stack"
-    stack_counts: dict[str, int] = {"open": 0, "resolved": 0}
-    if stack_dir.is_dir():
-        for md_path in sorted(stack_dir.glob("ST-*-*.md")):
-            post = parse_stack_post(md_path)
-            if post is not None:
-                s = post.frontmatter.status
-                if s in stack_counts:
-                    stack_counts[s] += 1
-                else:
-                    stack_counts[s] = 1
-
-    total_stack = sum(stack_counts.values())
-
-    # --- Lightweight validation (errors + warnings only) ---
-    report = validate_library(
-        project_root,
-        lexibrary_dir,
-        severity_filter="warning",
-    )
-    error_count = report.summary.error_count
-    warning_count = report.summary.warning_count
-
-    # --- Quiet mode ---
-    if quiet:
-        if error_count > 0 and warning_count > 0:
-            parts: list[str] = []
-            parts.append(f"{error_count} error{'s' if error_count != 1 else ''}")
-            parts.append(
-                f"{warning_count} warning{'s' if warning_count != 1 else ''}"
-            )
-            console.print(
-                "lexi: " + ", ".join(parts) + " \u2014 run `lexi validate`"
-            )
-        elif error_count > 0:
-            console.print(
-                f"lexi: {error_count} error{'s' if error_count != 1 else ''}"
-                " \u2014 run `lexi validate`"
-            )
-        elif warning_count > 0:
-            console.print(
-                f"lexi: {warning_count} warning{'s' if warning_count != 1 else ''}"
-                " \u2014 run `lexi validate`"
-            )
-        else:
-            console.print("lexi: library healthy")
-        raise typer.Exit(report.exit_code())
-
-    # --- Full dashboard ---
-    console.print()
-    console.print("[bold]Lexibrarian Status[/bold]")
-    console.print()
-
-    # Files
-    if stale_count > 0:
-        console.print(
-            f"  Files: {total_designs} tracked, {stale_count} stale"
-        )
-    else:
-        console.print(f"  Files: {total_designs} tracked")
-
-    # Concepts
-    concept_parts: list[str] = []
-    if concept_counts["active"] > 0:
-        concept_parts.append(f"{concept_counts['active']} active")
-    if concept_counts["deprecated"] > 0:
-        concept_parts.append(f"{concept_counts['deprecated']} deprecated")
-    if concept_counts["draft"] > 0:
-        concept_parts.append(f"{concept_counts['draft']} draft")
-    if concept_parts:
-        console.print("  Concepts: " + ", ".join(concept_parts))
-    else:
-        console.print("  Concepts: 0")
-
-    # Stack
-    if total_stack > 0:
-        console.print(
-            f"  Stack: {total_stack} post{'s' if total_stack != 1 else ''}"
-            f" ({stack_counts.get('resolved', 0)} resolved,"
-            f" {stack_counts.get('open', 0)} open)"
-        )
-    else:
-        console.print("  Stack: 0 posts")
-
-    console.print()
-
-    # Issues
-    console.print(
-        f"  Issues: {error_count} error{'s' if error_count != 1 else ''},"
-        f" {warning_count} warning{'s' if warning_count != 1 else ''}"
-    )
-
-    # Last updated
-    if latest_generated is not None:
-        now = datetime.now(tz=timezone.utc)
-        gen = latest_generated
-        if gen.tzinfo is None:
-            gen = gen.replace(tzinfo=timezone.utc)
-        delta = now - gen
-        total_seconds = int(delta.total_seconds())
-        if total_seconds < 60:
-            time_str = f"{total_seconds} second{'s' if total_seconds != 1 else ''} ago"
-        elif total_seconds < 3600:
-            minutes = total_seconds // 60
-            time_str = f"{minutes} minute{'s' if minutes != 1 else ''} ago"
-        elif total_seconds < 86400:
-            hours = total_seconds // 3600
-            time_str = f"{hours} hour{'s' if hours != 1 else ''} ago"
-        else:
-            days = total_seconds // 86400
-            time_str = f"{days} day{'s' if days != 1 else ''} ago"
-        console.print(f"  Updated: {time_str}")
-    else:
-        console.print("  Updated: never")
-
-    console.print()
-
-    # Suggest validate if issues exist
-    if error_count > 0 or warning_count > 0:
-        console.print("Run `lexi validate` for details.")
-
-    raise typer.Exit(report.exit_code())
-
-
-@app.command()
-def setup(
-    environment: Annotated[
+    tag: Annotated[
         str | None,
-        typer.Argument(help="Agent environment (cursor, claude, codex)."),
+        typer.Option("--tag", help="Filter by tag across all artifact types."),
     ] = None,
-    *,
-    update_flag: Annotated[
-        bool,
-        typer.Option("--update", help="Update existing agent rules."),
-    ] = False,
-) -> None:
-    """Install or update agent environment rules."""
-    _stub("setup")
-
-
-@app.command()
-def daemon(
-    path: Annotated[
-        Path | None,
-        typer.Argument(help="Project directory to watch."),
+    scope: Annotated[
+        str | None,
+        typer.Option("--scope", help="Filter by file scope path."),
     ] = None,
 ) -> None:
-    """Start the background file watcher daemon."""
-    _stub("daemon")
+    """Search across concepts, design files, and Stack posts."""
+    from lexibrarian.search import unified_search  # noqa: PLC0415
+
+    if query is None and tag is None and scope is None:
+        console.print("[yellow]Provide a query, --tag, or --scope to search.[/yellow]")
+        raise typer.Exit(1)
+
+    project_root = require_project_root()
+    results = unified_search(project_root, query=query, tag=tag, scope=scope)
+
+    if not results.has_results():
+        console.print("[yellow]No results found.[/yellow]")
+        return
+
+    results.render(console)

@@ -35,9 +35,7 @@ class IgnoreMatcher:
         self.root = root.resolve()
         self.config_spec = config_spec
         self.gitignore_specs = gitignore_specs
-        self.lexignore_spec = pathspec.PathSpec.from_lines(
-            "gitignore", lexignore_patterns or []
-        )
+        self.lexignore_spec = pathspec.PathSpec.from_lines("gitignore", lexignore_patterns or [])
 
     def _relative_path(self, path: Path, is_dir: bool = False) -> str:
         """
@@ -100,10 +98,7 @@ class IgnoreMatcher:
                 continue
 
         # Check .lexignore patterns
-        if self.lexignore_spec.match_file(rel_path):
-            return True
-
-        return False
+        return bool(self.lexignore_spec.match_file(rel_path))
 
     def should_descend(self, directory: Path) -> bool:
         """
@@ -136,7 +131,4 @@ class IgnoreMatcher:
                 continue
 
         # Check .lexignore patterns
-        if self.lexignore_spec.match_file(rel_path):
-            return False
-
-        return True
+        return not self.lexignore_spec.match_file(rel_path)

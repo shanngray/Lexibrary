@@ -15,6 +15,7 @@ from lexibrarian.artifacts.design_file import DesignFile, DesignFileFrontmatter,
 # StalenessMetadata
 # ---------------------------------------------------------------------------
 
+
 def _meta(**overrides: object) -> dict:
     """Return a minimal valid StalenessMetadata dict, with optional overrides."""
     base: dict = {
@@ -45,6 +46,7 @@ class TestStalenessMetadata:
 # ---------------------------------------------------------------------------
 # DesignFile
 # ---------------------------------------------------------------------------
+
 
 def _frontmatter(**overrides: object) -> DesignFileFrontmatter:
     base: dict = {"description": "A module."}
@@ -96,6 +98,7 @@ class TestDesignFile:
 # AIndexFile
 # ---------------------------------------------------------------------------
 
+
 class TestAIndexFile:
     def test_minimal_valid(self) -> None:
         entry = AIndexEntry(name="foo.py", entry_type="file", description="A file")
@@ -124,6 +127,7 @@ class TestAIndexFile:
 # ---------------------------------------------------------------------------
 # ConceptFileFrontmatter
 # ---------------------------------------------------------------------------
+
 
 class TestConceptFileFrontmatter:
     def test_defaults(self) -> None:
@@ -168,6 +172,7 @@ class TestConceptFileFrontmatter:
 # ConceptFile
 # ---------------------------------------------------------------------------
 
+
 class TestConceptFile:
     def test_minimal_valid(self) -> None:
         fm = ConceptFileFrontmatter(title="auth")
@@ -203,7 +208,7 @@ class TestConceptFile:
         assert cf.decision_log == ["Use RS256 algorithm"]
 
     def test_importable_from_artifacts(self) -> None:
-        from lexibrarian.artifacts import ConceptFile as CF
-        from lexibrarian.artifacts import ConceptFileFrontmatter as CFF
-        assert CF is not None
-        assert CFF is not None
+        from lexibrarian.artifacts import ConceptFile, ConceptFileFrontmatter
+
+        assert ConceptFile is not None
+        assert ConceptFileFrontmatter is not None

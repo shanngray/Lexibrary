@@ -157,9 +157,7 @@ class TestRecordVote:
 
     def test_downvote_post_with_comment(self, tmp_path: Path) -> None:
         post_path = _write_post(tmp_path, _BASE_POST)
-        result = record_vote(
-            post_path, "post", "down", "agent-voter", comment="Incorrect"
-        )
+        result = record_vote(post_path, "post", "down", "agent-voter", comment="Incorrect")
         assert result.frontmatter.votes == 2
 
     def test_downvote_without_comment_raises(self, tmp_path: Path) -> None:
@@ -179,9 +177,7 @@ class TestRecordVote:
 
     def test_downvote_answer_appends_comment(self, tmp_path: Path) -> None:
         post_path = _write_post(tmp_path, _POST_WITH_ANSWER, "ST-002.md")
-        result = record_vote(
-            post_path, "A1", "down", "agent-voter", comment="Doesn't work"
-        )
+        result = record_vote(post_path, "A1", "down", "agent-voter", comment="Doesn't work")
         assert result.answers[0].votes == 1
         assert any("[downvote]" in c for c in result.answers[0].comments)
         assert any("agent-voter" in c for c in result.answers[0].comments)
@@ -189,9 +185,7 @@ class TestRecordVote:
 
     def test_upvote_with_optional_comment(self, tmp_path: Path) -> None:
         post_path = _write_post(tmp_path, _POST_WITH_ANSWER, "ST-002.md")
-        result = record_vote(
-            post_path, "A1", "up", "agent-voter", comment="Confirmed working"
-        )
+        result = record_vote(post_path, "A1", "up", "agent-voter", comment="Confirmed working")
         assert result.answers[0].votes == 3
         assert any("[upvote]" in c for c in result.answers[0].comments)
         assert any("Confirmed working" in c for c in result.answers[0].comments)

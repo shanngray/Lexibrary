@@ -41,8 +41,8 @@ dev = [
 # ollama = ["ollama>=0.6.0"]
 
 [project.scripts]
-lexi = "lexibrarian.cli:app"
-lexibrarian = "lexibrarian.cli:app"
+lexi = "lexibrarian.cli:lexi_app"
+lexictl = "lexibrarian.cli:lexictl_app"
 
 [build-system]
 requires = ["hatchling"]

@@ -142,12 +142,8 @@ class TestStackPost:
         assert post.raw_body == ""
 
     def test_with_answers(self) -> None:
-        a1 = StackAnswer(
-            number=1, date=date(2026, 2, 21), author="a1", body="First"
-        )
-        a2 = StackAnswer(
-            number=2, date=date(2026, 2, 22), author="a2", body="Second"
-        )
+        a1 = StackAnswer(number=1, date=date(2026, 2, 21), author="a1", body="First")
+        a2 = StackAnswer(number=2, date=date(2026, 2, 22), author="a2", body="Second")
         post = StackPost(
             frontmatter=self._fm(),
             problem="A problem",

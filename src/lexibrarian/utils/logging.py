@@ -42,8 +42,6 @@ def setup_logging(
     if log_file is not None:
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(level)
-        file_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
+        file_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)

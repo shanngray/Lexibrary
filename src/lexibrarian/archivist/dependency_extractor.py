@@ -91,7 +91,9 @@ def _resolve_python_import(module_path: str, project_root: Path) -> str | None:
 
 
 def _resolve_js_import(
-    import_path: str, source_dir: Path, project_root: Path,
+    import_path: str,
+    source_dir: Path,
+    project_root: Path,
 ) -> str | None:
     """Resolve a JavaScript/TypeScript relative import to a project-relative path.
 
@@ -148,7 +150,9 @@ def _resolve_js_import(
 
 
 def _extract_python_deps(
-    root: object, file_path: Path, project_root: Path,
+    root: object,
+    file_path: Path,
+    project_root: Path,
 ) -> list[str]:
     """Extract Python import dependencies from an AST root node."""
     source_dir = file_path.parent
@@ -167,7 +171,9 @@ def _extract_python_deps(
 
 
 def _collect_import_statement(
-    node: object, deps: list[str], project_root: Path,
+    node: object,
+    deps: list[str],
+    project_root: Path,
 ) -> None:
     """Collect dependencies from a plain ``import X`` statement."""
     for child in _children(node):
@@ -215,7 +221,10 @@ def _collect_import_from_statement(
 
             if module_name:
                 resolved = _resolve_python_relative_import(
-                    module_name, dot_count, source_dir, project_root,
+                    module_name,
+                    dot_count,
+                    source_dir,
+                    project_root,
                 )
                 if resolved is not None:
                     deps.append(resolved)
@@ -274,7 +283,9 @@ def _resolve_python_relative_import(
 
 
 def _extract_js_deps(
-    root: object, file_path: Path, project_root: Path,
+    root: object,
+    file_path: Path,
+    project_root: Path,
 ) -> list[str]:
     """Extract JavaScript/TypeScript import dependencies from an AST root node."""
     source_dir = file_path.parent
@@ -285,9 +296,7 @@ def _extract_js_deps(
 
         if node_type in ("import_statement", "export_statement"):
             import_path = _find_string_import_path(node)
-            if import_path and (
-                import_path.startswith("./") or import_path.startswith("../")
-            ):
+            if import_path and (import_path.startswith("./") or import_path.startswith("../")):
                 resolved = _resolve_js_import(import_path, source_dir, project_root)
                 if resolved is not None:
                     deps.append(resolved)

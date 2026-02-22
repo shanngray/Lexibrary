@@ -46,7 +46,7 @@ class DaemonService:
         if not self._foreground:
             console.print(
                 "[yellow]Background mode is not yet supported.[/yellow]\n"
-                "Use [cyan]lexi daemon --foreground[/cyan] instead."
+                "Use [cyan]lexictl daemon --foreground[/cyan] instead."
             )
             return
 

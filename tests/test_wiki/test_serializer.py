@@ -83,7 +83,11 @@ class TestRoundTrip:
                 tags=["test", "roundtrip"],
                 status="active",
             ),
-            body="\nA concept about round trips.\n\nSee [[Other Concept]].\n\n## Details\n\nDetails here.\n\n## Decision Log\n\n- First decision\n- Second decision\n",
+            body=(
+                "\nA concept about round trips.\n\nSee [[Other Concept]]."
+                "\n\n## Details\n\nDetails here."
+                "\n\n## Decision Log\n\n- First decision\n- Second decision\n"
+            ),
         )
         serialized = serialize_concept_file(original)
         path = tmp_path / "RoundTrip.md"

@@ -200,8 +200,16 @@ class TestSerializeFrontmatter:
         result = serialize_stack_post(post)
         data = self._extract_yaml(result)
         expected_keys = {
-            "id", "title", "tags", "status", "created",
-            "author", "bead", "votes", "duplicate_of", "refs",
+            "id",
+            "title",
+            "tags",
+            "status",
+            "created",
+            "author",
+            "bead",
+            "votes",
+            "duplicate_of",
+            "refs",
         }
         assert set(data.keys()) == expected_keys
 

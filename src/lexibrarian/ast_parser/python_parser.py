@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
+from typing import cast
 
 from lexibrarian.ast_parser.models import (
     ClassSig,
@@ -89,7 +90,9 @@ def extract_interface(file_path: Path) -> InterfaceSkeleton | None:
 
         elif child.type == "expression_statement":
             _extract_from_expression_statement(
-                child, constants, exports,
+                child,
+                constants,
+                exports,
             )
 
     return InterfaceSkeleton(
@@ -473,7 +476,7 @@ def _child_by_field(node: object, field_name: str) -> object | None:
     """Get a child node by field name, or None."""
     fn = getattr(node, "child_by_field_name", None)
     if fn is not None:
-        return fn(field_name)
+        return cast("object | None", fn(field_name))
     return None
 
 

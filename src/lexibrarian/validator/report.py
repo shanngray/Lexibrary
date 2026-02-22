@@ -17,9 +17,9 @@ Severity = Literal["error", "warning", "info"]
 
 # Rendering symbols per severity
 _SEVERITY_SYMBOLS: dict[Severity, tuple[str, str]] = {
-    "error": ("\u2717", "red"),       # cross mark
+    "error": ("\u2717", "red"),  # cross mark
     "warning": ("\u26a0", "yellow"),  # warning triangle
-    "info": ("\u2139", "blue"),       # info circle
+    "info": ("\u2139", "blue"),  # info circle
 }
 
 # Display order: errors first, then warnings, then info
@@ -114,15 +114,11 @@ class ValidationReport:
     def render(self, console: Console) -> None:
         """Render the report to a Rich console, grouped by severity."""
         if not self.issues:
-            console.print(
-                Text("No validation issues found.", style="bold green")
-            )
+            console.print(Text("No validation issues found.", style="bold green"))
             return
 
         # Group issues by severity
-        grouped: dict[Severity, list[ValidationIssue]] = {
-            sev: [] for sev in _SEVERITY_ORDER
-        }
+        grouped: dict[Severity, list[ValidationIssue]] = {sev: [] for sev in _SEVERITY_ORDER}
         for issue in self.issues:
             grouped[issue.severity].append(issue)
 
@@ -135,9 +131,7 @@ class ValidationReport:
             symbol, color = _SEVERITY_SYMBOLS[sev]
             label = sev.capitalize() + "s"
             console.print()
-            console.print(
-                Text(f"{symbol} {label} ({len(group)})", style=f"bold {color}")
-            )
+            console.print(Text(f"{symbol} {label} ({len(group)})", style=f"bold {color}"))
 
             table = Table(show_header=True, show_lines=False, pad_edge=False)
             table.add_column("Check", style="dim")

@@ -34,9 +34,7 @@ def test_load_config_global_only(tmp_path: Path) -> None:
 def test_load_config_project_only(tmp_path: Path) -> None:
     """load_config loads values from project config when no global config."""
     (tmp_path / ".lexibrary").mkdir()
-    (tmp_path / ".lexibrary" / "config.yaml").write_text(
-        "daemon:\n  debounce_seconds: 5.0\n"
-    )
+    (tmp_path / ".lexibrary" / "config.yaml").write_text("daemon:\n  debounce_seconds: 5.0\n")
 
     config = load_config(
         project_root=tmp_path,
@@ -51,7 +49,8 @@ def test_load_config_project_overrides_global(tmp_path: Path) -> None:
     """Project config top-level keys override global config."""
     global_cfg = tmp_path / "global.yaml"
     global_cfg.write_text(
-        "llm:\n  provider: openai\n  model: gpt-4o\ndaemon:\n  enabled: false\n"
+        "llm:\n  provider: openai\n  model: gpt-4o\n"
+        "daemon:\n  debounce_seconds: 5.0\n"
     )
 
     (tmp_path / ".lexibrary").mkdir()
@@ -64,7 +63,7 @@ def test_load_config_project_overrides_global(tmp_path: Path) -> None:
     assert config.llm.provider == "anthropic"
     assert config.llm.model == "claude-opus-4-6"
     # Global value kept for daemon (not overridden)
-    assert config.daemon.enabled is False
+    assert config.daemon.debounce_seconds == 5.0
 
 
 def test_load_config_partial_project(tmp_path: Path) -> None:

@@ -51,8 +51,7 @@ class TestParseAIndex:
 
     def test_returns_none_for_missing_metadata_footer(self, tmp_path: Path) -> None:
         content = (
-            "# src\n\nBillboard.\n\n## Child Map\n\n(none)\n\n"
-            "## Local Conventions\n\n(none)\n"
+            "# src\n\nBillboard.\n\n## Child Map\n\n(none)\n\n## Local Conventions\n\n(none)\n"
         )
         p = _write_aindex(tmp_path, "nometa.aindex", content)
         result = parse_aindex(p)

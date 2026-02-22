@@ -16,6 +16,7 @@ from lexibrarian.archivist.change_checker import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -90,6 +91,7 @@ def _make_design_file(
 # ChangeLevel enum
 # ---------------------------------------------------------------------------
 
+
 class TestChangeLevelEnum:
     """Verify ChangeLevel has exactly six values."""
 
@@ -110,6 +112,7 @@ class TestChangeLevelEnum:
 # _design_file_path
 # ---------------------------------------------------------------------------
 
+
 class TestDesignFilePath:
     def test_mirror_path(self, tmp_path: Path) -> None:
         source = tmp_path / "src" / "foo.py"
@@ -120,6 +123,7 @@ class TestDesignFilePath:
 # ---------------------------------------------------------------------------
 # check_change scenarios
 # ---------------------------------------------------------------------------
+
 
 class TestCheckChangeNewFile:
     """No existing design file -> NEW_FILE."""
@@ -364,19 +368,13 @@ class TestCheckChangeContentChanged:
 # _compute_design_content_hash
 # ---------------------------------------------------------------------------
 
+
 class TestComputeDesignContentHash:
     """Design content hashing excludes footer."""
 
     def test_footer_excluded_from_hash(self, tmp_path: Path) -> None:
         source_rel = "src/foo.py"
-        body = (
-            "---\n"
-            "description: Test.\n"
-            "updated_by: archivist\n"
-            "---\n"
-            "\n"
-            "# src/foo.py\n"
-        )
+        body = "---\ndescription: Test.\nupdated_by: archivist\n---\n\n# src/foo.py\n"
 
         # Create design file with footer
         design_path = _make_design_file(
@@ -396,14 +394,7 @@ class TestComputeDesignContentHash:
     def test_footer_update_does_not_change_hash(self, tmp_path: Path) -> None:
         """Verify that updating only the footer does not change the design hash."""
         source_rel = "src/bar.py"
-        body = (
-            "---\n"
-            "description: Bar module.\n"
-            "updated_by: archivist\n"
-            "---\n"
-            "\n"
-            "# src/bar.py\n"
-        )
+        body = "---\ndescription: Bar module.\nupdated_by: archivist\n---\n\n# src/bar.py\n"
 
         # Create with one set of footer hashes
         path1 = _make_design_file(

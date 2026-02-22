@@ -318,9 +318,7 @@ class TestHashInsensitivity:
     def test_whitespace_change_same_interface_hash(self, tmp_path: Path) -> None:
         """Adding blank lines between declarations does not change the interface hash."""
         source_a = "def foo() -> None:\n    pass\ndef bar() -> None:\n    pass\n"
-        source_b = (
-            "def foo() -> None:\n    pass\n\n\n\ndef bar() -> None:\n    pass\n"
-        )
+        source_b = "def foo() -> None:\n    pass\n\n\n\ndef bar() -> None:\n    pass\n"
 
         file_a = tmp_path / "a.py"
         file_b = tmp_path / "b.py"

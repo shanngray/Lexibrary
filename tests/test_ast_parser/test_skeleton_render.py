@@ -198,9 +198,7 @@ class TestFunctionRendering:
                 FunctionSig(
                     name="connect",
                     parameters=[
-                        ParameterSig(
-                            name="timeout", type_annotation="float", default="30.0"
-                        ),
+                        ParameterSig(name="timeout", type_annotation="float", default="30.0"),
                     ],
                 ),
             ],

@@ -9,6 +9,7 @@ from lexibrarian.config.schema import (
     CrawlConfig,
     DaemonConfig,
     IgnoreConfig,
+    IWHConfig,
     LexibraryConfig,
     LLMConfig,
     MappingConfig,
@@ -29,6 +30,26 @@ def test_token_budget_defaults() -> None:
     config = TokenBudgetConfig()
     assert config.start_here_tokens == 800
     assert config.design_file_tokens == 400
+
+
+def test_token_budget_no_handoff_tokens() -> None:
+    """TokenBudgetConfig SHALL NOT have a handoff_tokens attribute (removed)."""
+    config = TokenBudgetConfig()
+    assert not hasattr(config, "handoff_tokens")
+
+
+def test_stale_handoff_tokens_silently_ignored() -> None:
+    """Loading config with stale handoff_tokens key does not raise an error."""
+    config = TokenBudgetConfig.model_validate({"handoff_tokens": 100})
+    assert not hasattr(config, "handoff_tokens")
+    # Other defaults still work
+    assert config.start_here_tokens == 800
+
+
+def test_ignore_config_no_handoff_pattern() -> None:
+    """Default additional_patterns SHALL NOT include .lexibrary/HANDOFF.md."""
+    config = IgnoreConfig()
+    assert ".lexibrary/HANDOFF.md" not in config.additional_patterns
 
 
 def test_mapping_config_defaults() -> None:
@@ -116,3 +137,59 @@ def test_max_file_size_kb_default() -> None:
 def test_max_file_size_kb_custom() -> None:
     config = LexibraryConfig.model_validate({"crawl": {"max_file_size_kb": 256}})
     assert config.crawl.max_file_size_kb == 256
+
+
+# --- IWHConfig tests ---
+
+
+def test_iwh_config_defaults() -> None:
+    """IWHConfig() defaults to enabled=True."""
+    config = IWHConfig()
+    assert config.enabled is True
+
+
+def test_iwh_config_extra_ignored() -> None:
+    """IWHConfig tolerates unknown extra fields without raising."""
+    config = IWHConfig.model_validate({"enabled": True, "unknown_field": "value"})
+    assert config.enabled is True
+    assert not hasattr(config, "unknown_field")
+
+
+# --- New LexibraryConfig field tests ---
+
+
+def test_project_name_default() -> None:
+    """project_name defaults to empty string."""
+    config = LexibraryConfig()
+    assert config.project_name == ""
+
+
+def test_agent_environment_default() -> None:
+    """agent_environment defaults to empty list."""
+    config = LexibraryConfig()
+    assert config.agent_environment == []
+
+
+def test_iwh_enabled_from_yaml() -> None:
+    """iwh.enabled can be set to False via model_validate (simulating YAML load)."""
+    config = LexibraryConfig.model_validate({"iwh": {"enabled": False}})
+    assert config.iwh.enabled is False
+
+
+def test_agent_environment_from_yaml() -> None:
+    """agent_environment can be populated via model_validate (simulating YAML load)."""
+    config = LexibraryConfig.model_validate({"agent_environment": ["claude", "cursor"]})
+    assert config.agent_environment == ["claude", "cursor"]
+
+
+def test_lexibrary_config_has_iwh() -> None:
+    """LexibraryConfig includes IWHConfig sub-model."""
+    config = LexibraryConfig()
+    assert isinstance(config.iwh, IWHConfig)
+
+
+def test_iwh_config_importable_from_package() -> None:
+    """IWHConfig is re-exported from lexibrarian.config."""
+    from lexibrarian.config import IWHConfig as PackageIWHConfig
+
+    assert PackageIWHConfig is IWHConfig

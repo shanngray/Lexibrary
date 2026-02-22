@@ -20,6 +20,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def _write_py(tmp_path: Path, code: str) -> Path:
     """Write a temporary Python file and return its path."""
     p = tmp_path / "test_module.py"
@@ -317,7 +318,9 @@ class TestFunctions:
         assert func.return_type is None
 
     def test_function_with_defaults(self, tmp_path: Path):
-        p = _write_py(tmp_path, "def retry(attempts: int = 3, delay: float = 1.0) -> None:\n    pass")
+        p = _write_py(
+            tmp_path, "def retry(attempts: int = 3, delay: float = 1.0) -> None:\n    pass"
+        )
         skel = extract_interface(p)
         assert skel is not None
         func = skel.functions[0]

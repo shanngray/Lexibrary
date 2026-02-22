@@ -7,6 +7,7 @@ from lexibrarian.config.loader import find_config_file, load_config
 from lexibrarian.config.schema import (
     DaemonConfig,
     IgnoreConfig,
+    IWHConfig,
     LexibraryConfig,
     LLMConfig,
     MappingConfig,
@@ -20,6 +21,7 @@ __all__ = [
     "load_config",
     "DaemonConfig",
     "IgnoreConfig",
+    "IWHConfig",
     "LexibraryConfig",
     "LLMConfig",
     "MappingConfig",

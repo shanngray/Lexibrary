@@ -25,6 +25,5 @@ async def fetch_resource(url: str, timeout: float = 10.0) -> bytes:
     """Fetch a resource from a URL."""
     import aiohttp
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=timeout) as resp:
-            return await resp.read()
+    async with aiohttp.ClientSession() as session, session.get(url, timeout=timeout) as resp:
+        return await resp.read()

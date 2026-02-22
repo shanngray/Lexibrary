@@ -26,9 +26,7 @@ def _get_structural_description(file_path: Path, binary_extensions: set[str]) ->
     if language is None:
         return "Unknown file type"
     try:
-        line_count = len(
-            file_path.read_text(encoding="utf-8", errors="replace").splitlines()
-        )
+        line_count = len(file_path.read_text(encoding="utf-8", errors="replace").splitlines())
     except OSError:
         line_count = 0
     return f"{language} source ({line_count} lines)"

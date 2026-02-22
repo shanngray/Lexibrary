@@ -73,8 +73,7 @@ class ArchivistService:
         self._client_name = _PROVIDER_CLIENT_MAP.get(config.provider)
         if self._client_name is None:
             logger.warning(
-                "No archivist client mapped for provider '%s'; "
-                "falling back to default BAML client",
+                "No archivist client mapped for provider '%s'; falling back to default BAML client",
                 config.provider,
             )
 
@@ -84,9 +83,7 @@ class ArchivistService:
             return b.with_options(client=self._client_name)
         return b
 
-    async def generate_design_file(
-        self, request: DesignFileRequest
-    ) -> DesignFileResult:
+    async def generate_design_file(self, request: DesignFileRequest) -> DesignFileResult:
         """Generate a design file for a source file via BAML.
 
         Respects rate limiting before the LLM call. Returns an error result
@@ -124,9 +121,7 @@ class ArchivistService:
                 error_message=error_msg,
             )
 
-    async def generate_start_here(
-        self, request: StartHereRequest
-    ) -> StartHereResult:
+    async def generate_start_here(self, request: StartHereRequest) -> StartHereResult:
         """Generate START_HERE.md content via BAML.
 
         Respects rate limiting before the LLM call. Returns an error result

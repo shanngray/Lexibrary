@@ -65,9 +65,7 @@ class TestRoundTripBasic:
         assert result.directory_path == original.directory_path
         assert result.billboard == original.billboard
         assert len(result.entries) == len(original.entries)
-        for orig_entry, parsed_entry in zip(
-            original.entries, result.entries, strict=True
-        ):
+        for orig_entry, parsed_entry in zip(original.entries, result.entries, strict=True):
             assert parsed_entry.name == orig_entry.name
             assert parsed_entry.entry_type == orig_entry.entry_type
             assert parsed_entry.description == orig_entry.description
@@ -172,9 +170,7 @@ class TestRoundTripLocalConventions:
         result = _round_trip(original, tmp_path)
 
         assert result is not None
-        assert result.local_conventions == [
-            "All modules use from __future__ import annotations"
-        ]
+        assert result.local_conventions == ["All modules use from __future__ import annotations"]
 
     def test_multiple_conventions_round_trip(self, tmp_path: Path) -> None:
         conventions = [
@@ -224,8 +220,7 @@ class TestRoundTripUnicode:
                 name="greeting.py",
                 entry_type="file",
                 description=(
-                    "Handles \u2018hello\u2019 and \u2018goodbye\u2019"
-                    " in multiple languages"
+                    "Handles \u2018hello\u2019 and \u2018goodbye\u2019 in multiple languages"
                 ),
             ),
         ]
@@ -234,10 +229,7 @@ class TestRoundTripUnicode:
         result = _round_trip(original, tmp_path)
 
         assert result is not None
-        expected_desc = (
-            "Handles \u2018hello\u2019 and \u2018goodbye\u2019"
-            " in multiple languages"
-        )
+        expected_desc = "Handles \u2018hello\u2019 and \u2018goodbye\u2019 in multiple languages"
         assert result.entries[0].description == expected_desc
 
     def test_unicode_directory_name(self, tmp_path: Path) -> None:
@@ -274,9 +266,7 @@ class TestRoundTripUnicode:
         result = _round_trip(original, tmp_path)
 
         assert result is not None
-        assert result.local_conventions == [
-            "Use \u00abguillemets\u00bb for French strings"
-        ]
+        assert result.local_conventions == ["Use \u00abguillemets\u00bb for French strings"]
 
     def test_mixed_unicode_round_trip(self, tmp_path: Path) -> None:
         """Full round-trip with Unicode in every field."""

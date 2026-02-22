@@ -153,7 +153,7 @@ def test_lexignore_missing_is_ok(tmp_path: Path) -> None:
 
 def test_three_layer_ignore_merge(tmp_path: Path) -> None:
     """A file ignored by any single layer should be excluded."""
-    from lexibrarian.config.schema import IgnoreConfig, LexibraryConfig
+    from lexibrarian.config.schema import LexibraryConfig
 
     # .gitignore ignores *.log
     (tmp_path / ".gitignore").write_text("*.log\n")

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from lexibrarian.stack.index import StackIndex
 from lexibrarian.stack.models import (
     StackAnswer,
     StackPost,
     StackPostFrontmatter,
     StackPostRefs,
 )
-from lexibrarian.stack.index import StackIndex
 from lexibrarian.stack.mutations import (
     accept_answer,
     add_answer,

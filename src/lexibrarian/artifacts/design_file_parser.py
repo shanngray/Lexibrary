@@ -111,7 +111,7 @@ def parse_design_file(path: Path) -> DesignFile | None:
         return None
 
     # Strip frontmatter block from text for further parsing
-    body_text = text[fm_match.end():]
+    body_text = text[fm_match.end() :]
     lines = body_text.splitlines()
 
     # --- H1 heading = source_path ---

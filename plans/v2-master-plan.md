@@ -23,7 +23,7 @@ The v1 codebase built a solid foundation of reusable infrastructure. The new vis
 
 | Module | What Changes |
 |--------|--------------|
-| `cli.py` | Entirely new command surface (`lookup`, `index`, `concepts`, `stack`, `update`, `validate`, `setup`, `describe`, `search`) |
+| `cli.py` | Split into two CLIs: `lexi` (agent-facing: `lookup`, `index`, `concepts`, `stack`, `describe`, `search`) and `lexictl` (maintenance: `init`, `update`, `validate`, `status`, `setup`, `daemon`) |
 | `config/schema.py` | Two-tier YAML config (`~/.config/` global + `.lexibrary/config.yaml` project) |
 | `config/loader.py` | Walk up to find `.lexibrary/` instead of `lexibrary.toml` |
 | `crawler/engine.py` | Now orchestrates design files + .aindex, not just .aindex |
@@ -41,8 +41,9 @@ The v1 codebase built a solid foundation of reusable infrastructure. The new vis
 | `src/lexibrarian/archivist/` | Orchestrate AST → skeleton → LLM → design file pipeline |
 | `src/lexibrarian/wiki/` | Wikilink parsing, resolution, concept file management (originally `knowledge_graph/`) |
 | `src/lexibrarian/stack/` | Stack post CRUD, voting, search |
-| `src/lexibrarian/init/` | Project init + agent environment rule generation |
+| `src/lexibrarian/init/` | Project init wizard + agent environment rule generation |
 | `src/lexibrarian/validator/` | Consistency checks (links, token bounds, bidirectional deps) |
+| `src/lexibrarian/iwh/` | I Was Here (IWH) system — ephemeral inter-agent signals |
 
 ---
 
@@ -54,7 +55,7 @@ project-root/
   .lexibrary/
     config.yaml          # project config (version controlled)
     START_HERE.md        # bootloader — agent entry point (< 2KB)
-    HANDOFF.md           # session relay — agent-to-agent post-it (< 100 tokens)
+    .iwh                 # project-root I Was Here signal (gitignored, ephemeral)
     concepts/            # concept files (cross-cutting knowledge)
       Authentication.md
       MoneyHandling.md
@@ -63,11 +64,14 @@ project-root/
     src/                 # design file mirror tree (1:1 within scope_root)
       auth/
         .aindex
+        .iwh             # directory-scoped I Was Here signal (gitignored, ephemeral)
         login.py.md      # design file with YAML frontmatter + markdown body + metadata footer
       api/
         .aindex
         user_controller.py.md
 ```
+
+`.iwh` files are ephemeral inter-agent signals, gitignored (pattern: `**/.iwh`). See overview §1 for full IWH specification.
 
 Config lives at `.lexibrary/config.yaml` (project) and `~/.config/lexibrarian/config.yaml` (global).
 Project root is found by walking upward from CWD to locate `.lexibrary/`.
@@ -89,37 +93,40 @@ Three-layer ignore: `.gitignore` + `.lexignore` + `config.ignore.additional_patt
 | 1 | Foundation Reset | CLI skeleton, config system, project structure | — |
 | 2 | Directory Indexes | `.aindex` files in `.lexibrary/` mirror tree | Phase 1 |
 | 3 | AST Parser | Interface skeletons, two-tier hashing | Phase 1 |
-| 4 | Archivist | Design files, START_HERE.md, `lexi update` / `lexi lookup` | Phase 3 |
+| 4 | Archivist | Design files, START_HERE.md, `lexictl update` / `lexi lookup` | Phase 3 |
 | 5 | Concepts Wiki | Concept files, wikilink resolution, `lexi concepts` / `lexi concept new` | Phase 4 |
 | 6 | The Stack | Stack posts, voting, `lexi stack post` / `lexi stack search`, unified `lexi search` | Phase 5 (wikilink resolver) |
-| 7 | Validation & Status | `lexi validate`, `lexi status`, `lexi lookup` convention inheritance | Phases 4, 5, 6 |
-| 8 | Agent Setup | `lexi setup`, env rules for Claude/Cursor/Codex | Phase 7 |
-| 9 | Daemon & CI | Auto-update on file change, git hooks | Phase 4 |
+| 7 | Validation & Status | `lexictl validate`, `lexictl status`, `lexi lookup` convention inheritance | Phases 4, 5, 6 |
+| 8a | CLI Split | Split `lexi`/`lexictl` entry points, move commands | Phase 7 |
+| 8b | Init Wizard | `lexictl init` wizard, `lexictl setup --update`, config persistence | Phase 8a |
+| 8c | Agent Rules + IWH | Rule templates per env, IWH system, skills/commands | Phase 8b |
+| 9 | Update Triggers & CI | Git hooks (primary), periodic sweep (safety net), CI integration, watchdog (deprecated) | Phase 4 |
 | 10 | Reverse Dependency Index | Two-pass reverse-index build, design file `dependents` population, bidirectional validation | Phase 4 (forward deps) |
 | 11 | Query Index | SQLite optimisation (optional) | Phase 7 |
 
-**Critical path:** 1 → 3 → 4 → 7 → 8
+**Critical path:** 1 → 3 → 4 → 7 → 8a → 8b → 8c
 
 **Parallelisable pairs:**
 - Phase 2 (.aindex) can run alongside Phase 3 (AST)
 - Phase 5 (Concepts Wiki) and Phase 6 (The Stack) can run in parallel once Phase 4 is complete (Phase 6 depends on Phase 5's wikilink resolver but core model/parser work is independent)
+- Phase 9 (Update Triggers & CI) can run alongside Phase 8 (no dependency between them)
 - Phase 10 (Reverse Index) can run alongside Phases 8 and 9 (no dependency between them)
 
 ---
 
 ## Phase 1 — Foundation Reset
 
-**Goal:** A working `lexi` binary with the new command surface, new config system, and the `.lexibrary/` directory structure. Nothing generates content yet — stubs return "not implemented."
+**Goal:** Working `lexi` and `lexictl` binaries with the new command surface, new config system, and the `.lexibrary/` directory structure. Nothing generates content yet — stubs return "not implemented."
 
 ### What Phase 1 Must Settle
 
 Before writing any further phase, the foundation establishes the decisions everything else builds on:
 
-1. **Config schema** — two-tier YAML, Pydantic 2 models, sensible defaults
-2. **Artifact data models** — Pydantic types for each artifact (design file, .aindex, concept, stack post). These are the shared vocabulary all later phases write and read.
+1. **Config schema** — two-tier YAML, Pydantic 2 models, sensible defaults (including `iwh.enabled`, `agent_environment`, `llm.api_key_env`)
+2. **Artifact data models** — Pydantic types for each artifact (design file, .aindex, concept, stack post, IWH). These are the shared vocabulary all later phases write and read.
 3. **Root resolution** — walk upward from CWD to find `.lexibrary/`; graceful error if not found
-4. **Project init** — `lexi init` creates the correct directory skeleton
-5. **CLI skeleton** — all commands registered with proper help text; non-implemented commands return a clear message
+4. **Project init** — `lexictl init` creates the correct directory skeleton (Phase 8b adds the wizard flow)
+5. **CLI skeleton** — both `lexi` and `lexictl` commands registered with proper help text; non-implemented commands return a clear message
 
 ### Reuse Assessment in Phase 1
 
@@ -185,13 +192,13 @@ Interface hash prevents expensive LLM regeneration when only internal implementa
 
 ## Phase 4 — Archivist: LLM-Powered Design Files
 
-**Goal:** `lexi update [<path>]` generates or refreshes design files as a **fallback** when agents haven't updated them directly. `lexi lookup <file>` returns the design file. START_HERE.md generation. `lexi describe` for directory descriptions.
+**Goal:** `lexictl update [<path>]` generates or refreshes design files as a **fallback** when agents haven't updated them directly. `lexi lookup <file>` returns the design file. START_HERE.md generation. `lexi describe` for directory descriptions.
 
 This is the core value proposition of Lexibrarian.
 
 ### Agent-First Authoring Model
 
-Agents writing code are the best authors of design files (they have full context). The Archivist LLM is the safety net for files agents missed. `lexi update` detects whether an agent already updated a design file and skips LLM regeneration if so.
+Agents writing code are the best authors of design files (they have full context). The Archivist LLM is the safety net for files agents missed. `lexictl update` detects whether an agent already updated a design file and skips LLM regeneration if so. Agents never invoke `lexictl update` — it runs as a maintenance process.
 
 ### Design File Format
 
@@ -226,7 +233,7 @@ Design file written to .lexibrary/<path>.md
 
 - File descriptions in `.aindex` Child Map are pulled from design file YAML frontmatter `description` field (with structural fallback when no design file exists)
 - Directory descriptions (`.aindex` billboard) are written once and not auto-updated; `lexi describe <dir> "..."` command available for manual updates
-- `lexi update` on a single file also refreshes the parent directory's `.aindex` entry
+- `lexictl update` on a single file also refreshes the parent directory's `.aindex` entry
 
 ### `.lexignore` and Scope Root
 
@@ -258,14 +265,14 @@ generator: lexibrarian v0.2.0
 
 ### What to Watch Out For
 
-- **Agent-first model requires Phase 8 (agent environment rules) to be effective.** Before Phase 8, `lexi update` is the primary path. Phase 8 rules must be explicit about the workflow order: agents update design files *first* (directly), then `lexi update` runs as a safety net. If rules say "run `lexi update` after making changes" without emphasising direct design file editing, agents will reach for `lexi update` as the primary path — defeating the agent-first model and incurring unnecessary LLM costs.
+- **Agent-first model requires Phase 8c (agent environment rules) to be effective.** Before Phase 8c, `lexictl update` is the primary path. Phase 8c rules must be explicit: agents update design files *directly* during coding. `lexictl update` is a maintenance-only safety net that agents never invoke. The CLI split (D-052) enforces this — agents can't accidentally run `lexictl update` because it's in a different binary.
 - Design file generation is async and LLM-expensive; rate limiter from v1 applies
 - Token budget validation runs after generation: flag if design file exceeds config target
-- `lexi lookup` must handle the case where no design file exists yet (offer to generate)
+- `lexi lookup` must handle the case where no design file exists yet (inform agent, do not offer to generate — generation is `lexictl`'s domain)
 - START_HERE.md is a special case: generated from project topology, not a single file
 - `.aindex` refresh on single file update requires read-modify-write of parent `.aindex`
 - Footer-less design files (agent-authored from scratch before Archivist runs) must be treated as `AGENT_UPDATED`, not `NEW_FILE` — otherwise agent work gets overwritten by LLM regeneration (D-026)
-- First-run `lexi update` on a large project is slow (sequential LLM calls, 10–30 min for 300+ files). Set expectations via progress bar and documentation. Design async architecture for future concurrency from the start (D-025)
+- First-run `lexictl update` on a large project is slow (sequential LLM calls, 10–30 min for 300+ files). Set expectations via progress bar and documentation. Design async architecture for future concurrency from the start (D-025)
 
 ---
 
@@ -294,7 +301,7 @@ A wikilink `[[Authentication]]` resolves to `.lexibrary/concepts/Authentication.
 ### What to Watch Out For
 
 - Wikilinks also appear in Stack posts (Phase 6) — resolver is a shared utility
-- Concept files contain wikilinks to other concepts; cycles are allowed (bidirectional relationships) but reported by `lexi validate`
+- Concept files contain wikilinks to other concepts; cycles are allowed (bidirectional relationships) but reported by `lexictl validate`
 - Tags in concept files feed the `lexi search --tag` command (Phase 7)
 - Design file wikilink format transitions from plain names to `[[bracketed]]` — parser handles both
 
@@ -313,7 +320,7 @@ A wikilink `[[Authentication]]` resolves to `.lexibrary/concepts/Authentication.
 - Tags unified across concepts, design files, and Stack posts — `lexi search --tag` returns all three (D-037, D-038)
 - Post body is append-only (answers, comments); frontmatter is mutable (votes, status) (D-039)
 - Post statuses: `open`, `resolved`, `outdated`, `duplicate` (D-040)
-- Staleness detection: `lexi validate` flags posts whose referenced files have changed (D-041)
+- Staleness detection: `lexictl validate` flags posts whose referenced files have changed (D-041)
 - Optional Bead ID in frontmatter for traceability (D-044)
 
 ### Sub-Phases
@@ -344,7 +351,7 @@ Phase 6 is structured into sub-phases that can partially overlap:
 
 ## Phase 7 — Validation & Search
 
-**Goal:** `lexi validate` runs all consistency checks. `lexi status` shows library health. `lexi search --tag <t>` finds artifacts by tag.
+**Goal:** `lexictl validate` runs all consistency checks. `lexictl status` shows library health. `lexi search --tag <t>` finds artifacts by tag.
 
 ### Validation Checks (in order)
 
@@ -357,7 +364,7 @@ Phase 6 is structured into sub-phases that can partially overlap:
 
 ### Status Output
 
-`lexi status` shows:
+`lexictl status` shows:
 - Total artifacts: N design files, M .aindex files, K concept files, J Stack posts
 - Stale artifacts: X files need updating
 - Unresolved links: Y broken wikilinks
@@ -371,56 +378,320 @@ Phase 6 is structured into sub-phases that can partially overlap:
 
 ---
 
-## Phase 8 — Agent Environment Auto-Setup
+## Phase 8 — CLI Restructure, Init Wizard & Agent Environment
 
-**Goal:** `lexi setup <env> [--update]` writes agent-specific configuration files that tell the agent how to use the library.
+**Goal:** Split the CLI into `lexi` (agent-facing) and `lexictl` (maintenance). Combine `init` and `setup` into a guided wizard (`lexictl init`). Implement agent environment rules, I Was Here (IWH) system, and skills/commands for supported environments.
 
-### Supported Environments (MVP)
+Phase 8 is structured into three sequential sub-phases:
 
-| Environment | Files Written |
-|-------------|--------------|
-| `claude` | `CLAUDE.md`, `.claude/commands/lexi-*.md` |
-| `cursor` | `.cursor/rules/lexibrarian.mdc`, `.cursor/skills/lexi.md` |
-| `codex` | `AGENTS.md` section |
+| Sub-Phase | Name | Scope | Depends On |
+|-----------|------|-------|------------|
+| **8a** | CLI Split | Split `lexi`/`lexictl` entry points, move commands to correct CLI | Phase 7 (existing CLI) |
+| **8b** | Init Wizard + Setup | `lexictl init` wizard, `lexictl setup --update`, config persistence | 8a |
+| **8c** | Agent Rules + IWH | Rule templates per environment, IWH system, skills/commands | 8b |
 
-### Rule Content
-
-The rules must instruct the agent to:
-- Read `START_HERE.md` + `HANDOFF.md` at session start
-- Run `lexi lookup <file>` before editing a file
-- Run `lexi concepts <topic>` before architectural decisions
-- Search `lexi stack search` before debugging; `lexi stack post` after solving a non-trivial bug
-- Run `lexi update` after making changes
-- Rewrite `HANDOFF.md` before session end
-
-### What to Watch Out For
-
-- `--update` must not clobber user customisations added after initial setup. Detect user-added sections and preserve them (comment-delimited regions).
-- Environment detection: `lexi init [--agent <env>]` can auto-detect or prompt; `lexi setup` is the explicit override
+**Critical path:** 8a → 8b → 8c (sequential — each builds on the previous)
 
 ---
 
-## Phase 9 — Daemon & CI Integration
+### Phase 8a — CLI Split
 
-**Goal:** `lexi daemon` watches for file changes and runs `lexi update` incrementally. Git hook and CI step generation.
+**Goal:** Two CLI entry points (`lexi`, `lexictl`) defined in `pyproject.toml`, with existing commands moved to the correct CLI. No new functionality — purely structural.
+
+**What moves where:**
+
+| `lexi` (agent day-to-day) | `lexictl` (setup/maintenance) |
+|---|---|
+| `lookup`, `index`, `describe` | `init` (wizard — 8b) |
+| `concepts`, `concept new`, `concept link` | `setup --update` (8b) |
+| `stack search/post/answer/vote/accept/view/list/mark-outdated/duplicate` | `update [<path>]` |
+| `search` | `validate [--severity] [--fix]` |
+| | `status [--quiet]` |
+| | `setup --hooks` (Phase 9) |
+| | `sweep` / `sweep --watch` (Phase 9) |
+| | `daemon start/stop/status` (Phase 9, deprecated) |
+
+**Implementation:**
+- Two `[project.scripts]` entries in `pyproject.toml`: `lexi` and `lexictl`
+- Two Typer/Click app instances sharing the same underlying modules
+- Existing command implementations move without logic changes — only the CLI registration changes
+- Both CLIs share root resolution (walk up to find `.lexibrary/`); `lexictl init` is the exception (creates `.lexibrary/`)
+
+**What to Watch Out For:**
+- CLI tests must be updated to invoke the correct binary
+- Existing `lexi update`, `lexi validate`, `lexi status` commands become `lexictl` commands — all references in docs, tests, and agent rules must update
+- No backwards-compatibility shims needed (pre-1.0, not yet live)
+
+---
+
+### Phase 8b — Init Wizard + Setup
+
+**Goal:** `lexictl init` runs a guided wizard combining project initialisation and agent environment setup. `lexictl setup --update` refreshes agent rules.
+
+**Wizard steps (8 steps, all have documented defaults for quick pass-through):**
+
+1. **Project Detection** — auto-detect name from `pyproject.toml`/`package.json`/directory name. *(Default: directory name)*
+2. **Scope Root** — "Which directories contain your source code?" Auto-suggest `src/`, `lib/`, `app/`. *(Default: `.`). "Modify later: `.lexibrary/config.yaml` → `scope_root`"*
+3. **Agent Environment** — auto-detect from `.claude/`, `.cursor/`, `CLAUDE.md`/`AGENTS.md`. Multi-select. If folders missing, ask before creating. If existing files found, grep for Lexibrarian section: found → advise user; not found → will append. *(Default: auto-detected). "Modify later: `.lexibrary/config.yaml` → `agent_environment`"*
+4. **LLM Provider** — detect env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). "We never store, log, or transmit your API key." Store provider + env var name in config. If env var not found, advise what to set. *(Default: first detected). "Modify later: `.lexibrary/config.yaml` → `llm.provider`, `llm.api_key_env`"*
+5. **Ignore Patterns** — suggest common patterns based on detected project type. *(Default: none). "Modify later: `.lexignore`"*
+6. **Token Budgets** — show defaults, offer to customize. *(Default: accept). "Customize later: `.lexibrary/config.yaml` → `token_budgets`"*
+7. **I Was Here** — brief explanation, enable/disable. *(Default: enabled). "Configure later: `.lexibrary/config.yaml` → `iwh.enabled`"*
+8. **Summary + Confirm** — show everything, confirm.
+
+**Re-init guard:** Running `lexictl init` on an already-initialised project errors with: "Project already initialised. Use `lexictl setup --update` to refresh agent rules."
+
+**`lexictl setup --update`:** Reads persisted `agent_environment` from config (D-058). Refreshes agent rules/skills/commands for configured environments. Preserves user-added sections (comment-delimited regions).
+
+**Config additions:**
+- `agent_environment: [claude, cursor]` — list of configured environments
+- `llm.api_key_env: ANTHROPIC_API_KEY` — env var name, never the value
+- `iwh.enabled: true` — I Was Here toggle
+
+**What to Watch Out For:**
+- API key security: never prompt for the key itself; detect from environment only; display clear transparency message
+- Agent environment detection: check for folders AND files (`.claude/` dir, `CLAUDE.md` file)
+- `AGENTS.md`/`CLAUDE.md` editing: grep for `<!-- lexibrarian:` markers before modifying; append section if no marker found; warn user if existing section found
+- Wizard should work non-interactively with `--defaults` flag for CI/scripting
+
+---
+
+### Phase 8c — Agent Rules + IWH
+
+**Goal:** Generate agent environment rules, skills, and commands. Implement the I Was Here (IWH) system.
+
+**Supported Environments (MVP):**
+
+| Environment | Files Written |
+|-------------|--------------|
+| `claude` | `CLAUDE.md` (append section), `.claude/commands/lexi-*.md`, `.claude/skills/` |
+| `cursor` | `.cursor/rules/lexibrarian.mdc`, `.cursor/skills/lexi.md` |
+| `codex` | `AGENTS.md` (append section) |
+
+**Rule Content — agents are instructed to:**
+- Read `.lexibrary/START_HERE.md` at session start
+- When entering a directory, check for `.iwh` — read, act, delete
+- Before editing a file, run `lexi lookup <file>`
+- After editing a file, update its design file directly (set `updated_by: agent`)
+- Before architectural decisions, run `lexi concepts <topic>`
+- Before debugging, run `lexi stack search`; after solving non-trivial bugs, run `lexi stack post`
+- If leaving something incomplete, create `.iwh`; if work is clean, don't
+- **Never invoke `lexictl` commands** — those are maintenance operations
+
+**I Was Here (IWH) System:**
+
+New module: `src/lexibrarian/iwh/`
+
+| Component | Purpose |
+|-----------|---------|
+| `model.py` | Pydantic model for `.iwh` files (author, created, scope, body) |
+| `reader.py` | Read + consume (delete) `.iwh` from a directory |
+| `writer.py` | Create `.iwh` in a directory |
+| `gitignore.py` | Ensure `**/.iwh` pattern exists in `.gitignore` |
+
+IWH scope values: `warning`, `incomplete`, `blocked`.
+
+**Skills / Commands:**
+- `/lexi-orient` — reads `START_HERE.md` + checks for `.iwh` + runs `lexictl status --quiet`
+- `/lexi-search <topic>` — wraps `lexi search` with richer context
+
+**Hooks:**
+- Session start hook: `lexictl status --quiet` (passive health signal)
+- Pre-edit hook: `lexi lookup <file>` (configurable, may be too aggressive)
+
+**What to Watch Out For:**
+- IWH files must be gitignored; `lexictl init` and `iwh/gitignore.py` must ensure the pattern exists
+- Git worktrees: `.iwh` files are worktree-local (gitignored), which is correct behaviour
+- Same-directory race condition for parallel agents is accepted (Q-014) — IWH is advisory, not transactional
+- Skills/commands generation is environment-specific; template system needed
+- Rule generation must escape special characters in `.mdc` files (Cursor MDC format)
+
+---
+
+## Phase 9 — Update Triggers & CI Integration
+
+**Goal:** Automated library maintenance via git hooks (primary), periodic sweep (safety net), and CI integration. The watchdog daemon is retained but deprecated and off by default.
+
+### Strategy: Trigger at the Right Boundary
+
+The agent-first authoring model (D-019) means agents update design files during coding. Automated triggers catch what agents miss. The key insight: the right trigger boundary is *when work is done* (commit), not *when a file is saved* (mid-edit). This eliminates race conditions with running agents, avoids wasted LLM calls on intermediate saves, and requires no persistent process.
+
+### Trigger Tiers (in priority order)
+
+| Tier | Trigger | Config | Default | Notes |
+|------|---------|--------|---------|-------|
+| **Primary** | Git post-commit hook | `lexictl setup --hooks` | Recommended | Fires at natural "work is done" boundary. Zero race conditions. |
+| **Safety net** | Periodic sweep | `daemon.sweep_interval_seconds` | 3600 (60 min) | Catches drift that hooks missed. Skip-if-unchanged by default. |
+| **Manual** | CLI | `lexictl update [<path>]` | Always available | On-demand, explicit. |
+| **CI/CD** | Pipeline step | `lexictl validate` | Per-project | PR gate, like a linter. |
+| **Deprecated** | Watchdog daemon | `daemon.watchdog_enabled` | `false` | Real-time file watching. Off by default. See rationale below. |
+
+### Tier 1: Git Post-Commit Hook (Primary)
+
+`lexictl setup --hooks` writes a `.git/hooks/post-commit` script that runs `lexictl update --changed-only` on files modified in the commit.
+
+**Why post-commit, not pre-commit:**
+- Pre-commit blocks the commit while LLM calls run (potentially minutes for many files). Users hate this.
+- Post-commit runs after the commit is recorded. If it fails, the commit isn't lost.
+- The library is a documentation layer — it should never block code delivery.
+
+**Implementation:**
+```bash
+#!/bin/sh
+# Lexibrarian post-commit hook — update design files for committed changes
+# Generated by: lexictl setup --hooks
+
+changed_files=$(git diff-tree --no-commit-id --name-only -r HEAD)
+if [ -n "$changed_files" ]; then
+    lexictl update --changed-only $changed_files &
+fi
+```
+
+The hook runs `lexictl update` in the background (`&`) so it doesn't block the user's terminal after commit. Output goes to `.lexibrarian.log`.
+
+**What to Watch Out For:**
+- Hook must be executable (`chmod +x`)
+- `--no-verify` skips hooks — accepted; the periodic sweep catches it
+- If the user has an existing post-commit hook, append rather than overwrite (or use a hook manager like `husky` / `pre-commit` framework)
+- Amend commits (`git commit --amend`) trigger the hook again — this is correct (re-process changed files)
+- Merge commits may touch many files — same as a large commit, processed sequentially
+
+### Tier 2: Periodic Sweep (Safety Net)
+
+The existing `scheduler.py` runs `lexictl update` at a configurable interval (default: 60 minutes). This catches:
+- Files missed by hooks (e.g., `--no-verify`, manual file edits outside git)
+- Drift from branch switches that didn't trigger hooks
+- Projects not using git hooks
+
+**Skip-if-unchanged (D-066):**
+Before running a sweep, scan `scope_root` for any file with `mtime` newer than the last sweep timestamp. If nothing changed, skip the sweep entirely. This is a cheap stat walk (no hashing, no file reads). The 60-minute interval becomes a *maximum* — in practice, sweeps only fire when there's actual work.
+
+**Implementation:**
+- Store last sweep timestamp in memory (not persisted — resets on process restart, which is correct)
+- `os.scandir()` walk comparing `st_mtime` against the timestamp
+- Skip `.lexibrary/` and ignored paths during the scan
+- Log "sweep skipped — no changes detected" at debug level
+
+**Running the sweep:**
+- As a one-shot: `lexictl sweep` (runs once, exits)
+- As a long-running timer: `lexictl sweep --watch` (runs `scheduler.py` in a loop, foreground)
+- Via external scheduler: cron, systemd timer, launchd, or Task Scheduler
+
+### Tier 3: CI/CD Integration
+
+**PR validation gate:**
+```yaml
+# GitHub Actions example
+- name: Validate Lexibrarian library
+  run: |
+    lexictl update --changed-only $(git diff --name-only origin/main...HEAD)
+    lexictl validate --severity warning
+```
+
+**Full rebuild (nightly/weekly):**
+```yaml
+- name: Full library rebuild
+  run: |
+    lexictl update
+    lexictl validate
+```
+
+### Watchdog Daemon (Deprecated — D-065)
+
+The watchdog-based real-time daemon (`daemon/watcher.py`, `debouncer.py`) is retained in the codebase but **deprecated and off by default** (`daemon.watchdog_enabled: false`).
+
+**Rationale for deprecation:**
+- The daemon creates an adversarial relationship with the agent-first authoring model — during active agent sessions, it wastes LLM calls producing output that gets discarded (agent work wins via D-061)
+- All safety mechanisms D-059 through D-064 exist solely because the daemon runs alongside active development. Without it, most are unnecessary for the primary trigger modes.
+- Git hooks trigger at the natural "work is done" boundary, eliminating race conditions entirely
+- The periodic sweep catches the same drift with far less complexity
+
+**When to enable it:**
+- Teams with mostly human developers (no agents) who want real-time design file updates
+- Demo or evaluation environments where real-time feedback is important
+- Projects where git hooks are not available or not used
+
+**If enabled (`daemon.watchdog_enabled: true`):**
+All safety mechanisms from D-059 through D-064 apply:
+- Foreground-only (D-059)
+- Atomic writes via `os.replace()` (D-060)
+- Design hash re-check after LLM generation (D-061)
+- Git branch switch suppression window (D-062)
+- Conflict marker detection (D-063)
+- Per-directory `.aindex` write lock (D-064)
 
 ### Reuse from v1
 
-The `daemon/watcher.py`, `debouncer.py`, and `scheduler.py` modules from v1 are reused. The only change: instead of triggering a full crawl, trigger `lexi update <changed-file>` for each debounced event.
+- `daemon/scheduler.py` — reused directly for periodic sweep
+- `daemon/debouncer.py` — retained for watchdog mode (deprecated)
+- `daemon/watcher.py` — retained for watchdog mode (deprecated)
+- `daemon/service.py` — refactored: sweep mode is primary, watchdog mode is optional
 
-### New Triggers
+### Safety Mechanisms (All Trigger Modes)
 
-| Trigger | Config | Notes |
-|---------|--------|-------|
-| Daemon | `trigger_mode: daemon` | Default; watchdog + debounce |
-| CLI | `lexi update` | Manual; always available |
-| Git hook | `lexi setup --hooks` | Writes `.git/hooks/post-commit` |
-| CI | `lexi update && lexi validate` | Document as pipeline step |
+These apply regardless of which trigger is used:
+
+**Atomic writes (D-060):**
+All writes to `.lexibrary/` use write-to-temp-then-`os.replace()`. Atomic on POSIX, near-atomic on Windows. Agents reading design files via `lexi lookup` always see either the old or new version, never a partial write.
+
+**Design hash re-check (D-061):**
+Re-check `design_hash` *after* LLM generation, immediately before writing. If an agent edited the design file during the LLM call, discard the LLM output. Agent work always wins. Relevant for post-commit hooks (agent may still be running) and sweeps.
+
+**Conflict marker detection (D-063):**
+Before invoking the Archivist on a changed source file, check for git conflict markers (`<<<<<<<` at start of line). Files with unresolved merge conflicts are skipped and logged as warnings.
+
+**`.aindex` write serialisation (D-064):**
+Per-directory lock prevents concurrent `.aindex` writes when async processing is enabled (D-025). Implemented from the start (no-op under sequential MVP).
+
+### Git Worktrees
+
+Worktrees are naturally safe across all trigger modes:
+- Each worktree has its own working tree and `.lexibrary/` directory
+- Git hooks are per-worktree (each has its own `.git/hooks/` or linked hooks)
+- The periodic sweep watches a specific project root — worktree A's sweep never touches worktree B
+- `.iwh` files are gitignored (worktree-local)
+
+### Logging
+
+All trigger modes log to `.lexibrarian.log` (project root, gitignored):
+- File change events processed (source file path, change level)
+- LLM calls initiated and completed (with duration and token usage)
+- Design hash re-check discards ("agent edited during generation, discarding")
+- Sweep skip events ("no changes detected, skipping")
+- Git suppression window activation (watchdog mode only)
+- Errors and exceptions
+
+Log rotation via `RotatingFileHandler` (5MB max, 3 backups). Log level configurable via `daemon.log_level` (default: `info`).
+
+### Config
+
+```yaml
+daemon:
+  sweep_interval_seconds: 3600          # Periodic sweep interval (default: 60 min)
+  sweep_skip_if_unchanged: true         # Skip sweep if no files changed since last run
+  git_suppression_seconds: 5            # Watchdog: suppression window after branch switches
+  watchdog_enabled: false               # Real-time file watching (deprecated, off by default)
+  debounce_seconds: 2.0                 # Watchdog: coalesce rapid file events
+```
+
+### CLI Changes
+
+```
+lexictl setup --hooks                   # Install git post-commit hook
+lexictl sweep                           # Run one sweep (process all pending changes, then exit)
+lexictl sweep --watch                   # Run periodic sweeps in foreground (uses scheduler.py)
+lexictl daemon start|stop|status        # Watchdog daemon (deprecated, requires watchdog_enabled: true)
+```
 
 ### What to Watch Out For
 
-- The daemon must not trigger on `.lexibrary/` changes (avoid infinite loops)
-- PID file management from v1 daemon applies unchanged
+- Git hook installation must detect and preserve existing hooks (append, don't overwrite)
+- `lexictl sweep` must not trigger on `.lexibrary/` changes (avoid infinite loops)
+- PID file management from v1 daemon applies to `sweep --watch` and `daemon` modes
+- Conflict marker detection is a simple string scan (cheap) — check for `<<<<<<<` at start of line
+- Atomic write via `os.replace()` requires temp file in the same filesystem as the target (use same directory)
+- The `--changed-only` flag for `lexictl update` must accept a file list from stdin or arguments (for hook integration)
+- Log file must be in `.gitignore` — `lexictl init` should ensure this
 
 ---
 
@@ -433,12 +704,12 @@ The `daemon/watcher.py`, `debouncer.py`, and `scheduler.py` modules from v1 are 
 1. **Forward pass** — collect all forward dependencies from every design file (already populated by Phase 4's AST import extraction).
 2. **Reverse pass** — invert the dependency map to produce dependents for each file.
 
-The reverse index is built during `lexi update` and written back into design file `## Dependents` sections. The index is cached and updated incrementally when individual files change.
+The reverse index is built during `lexictl update` and written back into design file `## Dependents` sections. The index is cached and updated incrementally when individual files change.
 
 ### What This Enables
 
 - Design file `dependents` field populated (currently always empty)
-- `lexi validate` bidirectional consistency check (D-048 — currently deferred)
+- `lexictl validate` bidirectional consistency check (D-048 — currently deferred)
 - "What uses this file?" queries via `lexi search` or `lexi lookup`
 - Impact analysis: "if I change this file, what else might break?"
 
@@ -459,7 +730,7 @@ Design principle: all CLI commands keep the same interface regardless of backend
 
 ### Trigger for Adopting Option B
 
-Empirical: if `lexi validate` or `lexi search` takes > 2 seconds on a real project, add the index.
+Empirical: if `lexictl validate` or `lexi search` takes > 2 seconds on a real project, add the index.
 
 ---
 
@@ -496,4 +767,46 @@ The `tests/fixtures/sample_project/` from v1 should be extended to include a mul
 2. **Mapping strategy config:** Confirm glob-pattern approach in config for 1:1 / grouped / abridged / skipped
 3. **Tree-sitter grammar installation:** Bundled in the package or installed on demand? (Leaning: on demand, with a clear error message)
 4. **baml-py version:** Current pin is `0.218.0`; check if it needs to bump for new prompt patterns
-5. **`lexi init` vs `lexi setup`:** `init` creates `.lexibrary/`; `setup` configures agent environment — keep distinct
+5. ~~**`lexi init` vs `lexi setup`:** `init` creates `.lexibrary/`; `setup` configures agent environment — keep distinct~~ **Resolved — D-054:** Combined into `lexictl init` wizard. `lexictl setup --update` refreshes rules only.
+
+---
+
+## Implementation Backlog
+
+Items not covered by existing phases. These are gaps identified during design review — features the overview describes or implies but that no phase explicitly delivers. Grouped by origin.
+
+### CLI Gaps (commands specified in overview but not implemented)
+
+| Item | Status | Relates To | Notes |
+|------|--------|------------|-------|
+| `lexi concepts --tag <t>` | Not implemented | Phase 5 | Overview §4/§9 specifies this flag. Current implementation only accepts positional `<topic>`. |
+| `lexi concepts --status <s>` | Not implemented | Phase 5 | Useful for filtering draft/deprecated concepts. Added to overview §4/§9. |
+| `lexi concepts --all` | Not implemented | Phase 5 | Listed in overview §9. May be moot if `lexi concepts` with no args already shows all. Decide if default should be "active only" (making `--all` meaningful) or "everything." |
+| `lexi stack list` | Implemented, not in spec | Phase 6 | Working in CLI but was missing from overview §9. Now added. |
+| `lexi stack mark-outdated <post-id>` | Not implemented | Phase 6 | Mutation exists in code (`mark_outdated()`). Overview describes the lifecycle transition but had no CLI command. Now added to overview §9. |
+| `lexi stack duplicate <post-id> --of <id>` | Not implemented | Phase 6 | Mutation exists in code (`mark_duplicate()`). Overview describes duplicate lifecycle but had no CLI command. Now added to overview §9. |
+| `lexictl update --dry-run` | Not implemented | Phase 4 | Preview what would change without LLM calls. See overview Q-005. |
+| `lexictl update --start-here` | Not implemented | Phase 4 | Regenerate START_HERE.md independently without full project update. Currently START_HERE is only regenerated as part of `lexictl update` (no path). |
+| `lexictl validate --fix` | Not implemented | Phase 7 | Auto-remediate fixable issues. Referenced in D-047. Scope TBD — likely limited to safe fixes (refresh stale hashes, remove broken wikilinks). |
+
+### Feature Gaps (design described but not delivered)
+
+| Item | Phase | Notes |
+|------|-------|-------|
+| **Mapping strategy evaluation** | Post-Phase 4 | `mapping.strategies` config field exists as an empty list stub. The 1:1/grouped/abridged/skipped strategies described in overview §2 are never evaluated. All files get 1:1 treatment. Implementing this requires: pattern matching engine, strategy-specific design file templates, grouped file aggregation logic. See overview Q-010 for template overrides. |
+| **Skills / commands generation** | Phase 8c | Overview §8 describes `/lexi-orient` and `/lexi-search` skills for agent environments. Now explicitly scoped in Phase 8c: rules + skills + commands for each environment. |
+| **Concurrency for `lexictl update`** | Post-Phase 4 | D-025 establishes sequential MVP with async architecture. When concurrency is added, needs a config key (e.g., `update.max_concurrent: 4`). Not urgent but should be tracked. |
+| **`start_here.topology_format` config** | Phase 8b | Overview §1 says topology format is "configurable" (Mermaid vs ASCII). No config key exists. See overview Q-009. |
+| ~~**Persist agent environment in config**~~ | ~~Phase 8~~ | Resolved — D-058. `lexictl init` wizard persists `agent_environment` in config. `lexictl setup --update` reads from config. |
+
+### Configuration Suggestions (for future consideration)
+
+These are not gaps in the design — they're potential improvements to consider as the tool matures:
+
+| Suggestion | Rationale |
+|-----------|-----------|
+| `llm.archivist_model` | Allow a different (cheaper/faster) model for design file generation vs. START_HERE generation. The Archivist does repetitive work on many files; a cheaper model may suffice. |
+| `crawl.max_files` | Hard limit on files processed per `lexictl update` run. Safety valve for enormous projects where accidental full-project updates are expensive. |
+| `validate.disabled_checks` | Persist disabled checks in project config (e.g., suppress `orphan_concepts` during early setup). Currently filtering is CLI-invocation-only via `--check` and `--severity`. |
+| `scope_root` as list | Support multiple source roots for monorepos (e.g., `["src/", "lib/"]`). See overview Q-007. |
+| Stack post token warning | Optional warning threshold for large Stack posts. See overview Q-006. |

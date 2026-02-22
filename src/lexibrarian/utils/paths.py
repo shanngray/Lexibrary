@@ -37,3 +37,24 @@ def aindex_path(project_root: Path, directory: Path) -> Path:
     """
     relative = directory.relative_to(project_root) if directory.is_absolute() else directory
     return project_root / LEXIBRARY_DIR / relative / ".aindex"
+
+
+def iwh_path(project_root: Path, source_directory: Path) -> Path:
+    """Compute the ``.iwh`` file path for a source directory.
+
+    Maps ``src/auth/`` -> ``.lexibrary/src/auth/.iwh``.
+
+    Args:
+        project_root: Absolute path to the project root.
+        source_directory: Absolute or project-relative path to a source
+            directory.
+
+    Returns:
+        Absolute path to the ``.iwh`` file inside ``.lexibrary/``.
+    """
+    relative = (
+        source_directory.relative_to(project_root)
+        if source_directory.is_absolute()
+        else source_directory
+    )
+    return project_root / LEXIBRARY_DIR / relative / ".iwh"

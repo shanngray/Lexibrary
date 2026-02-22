@@ -62,22 +62,14 @@ class StackIndex:
     def by_tag(self, tag: str) -> list[StackPost]:
         """Filter posts by tag (case-insensitive)."""
         needle = tag.strip().lower()
-        return [
-            p
-            for p in self._posts
-            if any(t.lower() == needle for t in p.frontmatter.tags)
-        ]
+        return [p for p in self._posts if any(t.lower() == needle for t in p.frontmatter.tags)]
 
     def by_scope(self, path: str) -> list[StackPost]:
         """Filter posts by referenced file path using prefix matching.
 
         A post matches if any of its ``refs.files`` starts with *path*.
         """
-        return [
-            p
-            for p in self._posts
-            if any(f.startswith(path) for f in p.frontmatter.refs.files)
-        ]
+        return [p for p in self._posts if any(f.startswith(path) for f in p.frontmatter.refs.files)]
 
     def by_status(self, status: str) -> list[StackPost]:
         """Filter posts by status value."""
@@ -87,9 +79,7 @@ class StackIndex:
         """Filter posts referencing a concept name (case-insensitive)."""
         needle = concept.strip().lower()
         return [
-            p
-            for p in self._posts
-            if any(c.lower() == needle for c in p.frontmatter.refs.concepts)
+            p for p in self._posts if any(c.lower() == needle for c in p.frontmatter.refs.concepts)
         ]
 
     # ------------------------------------------------------------------

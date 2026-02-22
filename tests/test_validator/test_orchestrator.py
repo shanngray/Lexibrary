@@ -14,7 +14,6 @@ import pytest
 from lexibrarian.utils.hashing import hash_file
 from lexibrarian.validator import AVAILABLE_CHECKS, ValidationReport, validate_library
 
-
 # ---------------------------------------------------------------------------
 # Helpers -- create valid artifacts on disk
 # ---------------------------------------------------------------------------
@@ -103,9 +102,7 @@ def _write_concept_file(
 
     aliases_yaml = "[" + ", ".join(aliases or [title.lower()]) + "]"
     tags_yaml = "[" + ", ".join(tags or ["general"]) + "]"
-    superseded_line = (
-        f"superseded_by: {superseded_by}" if superseded_by else ""
-    )
+    superseded_line = f"superseded_by: {superseded_by}" if superseded_by else ""
 
     filename = title.lower().replace(" ", "-") + ".md"
     concept_path = concepts_dir / filename
@@ -208,9 +205,7 @@ class TestHealthyProject:
 class TestMixedIssues:
     """Validate that a project with mixed issues returns all severities."""
 
-    def test_mixed_issues_produces_errors_warnings_info(
-        self, tmp_path: Path
-    ) -> None:
+    def test_mixed_issues_produces_errors_warnings_info(self, tmp_path: Path) -> None:
         """A project with broken wikilinks, stale hashes, and missing
         aindex should produce issues at all severity levels."""
         project_root = tmp_path
@@ -231,7 +226,7 @@ class TestMixedIssues:
         (lexibrary_dir / "concepts").mkdir(parents=True, exist_ok=True)
 
         # WARNING: Stale design file (hash mismatch)
-        source2 = _write_source_file(project_root, "src/stale.py", "# stale\n")
+        _write_source_file(project_root, "src/stale.py", "# stale\n")
         _write_design_file(
             lexibrary_dir,
             "src/stale.py",
@@ -262,7 +257,7 @@ class TestMixedIssues:
         (lexibrary_dir / "concepts").mkdir(parents=True, exist_ok=True)
 
         # WARNING: Stale design file (hash mismatch) but source exists
-        source = _write_source_file(project_root, "src/stale.py", "# stale\n")
+        _write_source_file(project_root, "src/stale.py", "# stale\n")
         _write_design_file(
             lexibrary_dir,
             "src/stale.py",
@@ -270,9 +265,7 @@ class TestMixedIssues:
         )
 
         # Run with severity_filter=warning to skip info checks
-        report = validate_library(
-            project_root, lexibrary_dir, severity_filter="warning"
-        )
+        report = validate_library(project_root, lexibrary_dir, severity_filter="warning")
 
         assert not report.has_errors()
         assert report.has_warnings()
@@ -296,9 +289,7 @@ class TestEmptyLibrary:
         _write_config(project_root)
 
         # Run only error + warning checks to avoid aindex_coverage noise
-        report = validate_library(
-            project_root, lexibrary_dir, severity_filter="warning"
-        )
+        report = validate_library(project_root, lexibrary_dir, severity_filter="warning")
 
         assert isinstance(report, ValidationReport)
         assert len(report.issues) == 0
@@ -337,24 +328,18 @@ class TestSeverityFilter:
         # Create a stale design file (would produce warning) and a missing
         # source file (would produce error)
         _write_design_file(lexibrary_dir, "src/missing.py", source_hash="abc")
-        source = _write_source_file(project_root, "src/stale.py", "# stale\n")
-        _write_design_file(
-            lexibrary_dir, "src/stale.py", source_hash="wrong_hash"
-        )
+        _write_source_file(project_root, "src/stale.py", "# stale\n")
+        _write_design_file(lexibrary_dir, "src/stale.py", source_hash="wrong_hash")
 
         # Only error-severity checks
-        report = validate_library(
-            project_root, lexibrary_dir, severity_filter="error"
-        )
+        report = validate_library(project_root, lexibrary_dir, severity_filter="error")
 
         # Should find the missing source file error
         assert report.has_errors()
         # Should NOT find warnings -- those checks were not run
         assert all(i.severity == "error" for i in report.issues)
 
-    def test_severity_filter_warning_includes_errors_and_warnings(
-        self, tmp_path: Path
-    ) -> None:
+    def test_severity_filter_warning_includes_errors_and_warnings(self, tmp_path: Path) -> None:
         """severity_filter='warning' should run error and warning checks."""
         project_root = tmp_path
         lexibrary_dir = project_root / ".lexibrary"
@@ -366,14 +351,10 @@ class TestSeverityFilter:
         _write_design_file(lexibrary_dir, "src/gone.py", source_hash="abc")
 
         # Warning: stale hash
-        source = _write_source_file(project_root, "src/stale.py", "# stale\n")
-        _write_design_file(
-            lexibrary_dir, "src/stale.py", source_hash="wrong_hash"
-        )
+        _write_source_file(project_root, "src/stale.py", "# stale\n")
+        _write_design_file(lexibrary_dir, "src/stale.py", source_hash="wrong_hash")
 
-        report = validate_library(
-            project_root, lexibrary_dir, severity_filter="warning"
-        )
+        report = validate_library(project_root, lexibrary_dir, severity_filter="warning")
 
         severities = {i.severity for i in report.issues}
         assert "error" in severities
@@ -391,14 +372,10 @@ class TestSeverityFilter:
 
         # Set up issues at all levels
         _write_design_file(lexibrary_dir, "src/gone.py", source_hash="abc")
-        source = _write_source_file(project_root, "src/stale.py", "# stale\n")
-        _write_design_file(
-            lexibrary_dir, "src/stale.py", source_hash="wrong_hash"
-        )
+        _write_source_file(project_root, "src/stale.py", "# stale\n")
+        _write_design_file(lexibrary_dir, "src/stale.py", source_hash="wrong_hash")
 
-        report_filtered = validate_library(
-            project_root, lexibrary_dir, severity_filter="info"
-        )
+        report_filtered = validate_library(project_root, lexibrary_dir, severity_filter="info")
         report_unfiltered = validate_library(project_root, lexibrary_dir)
 
         # Both should produce the same issues
@@ -411,9 +388,7 @@ class TestSeverityFilter:
         lexibrary_dir.mkdir()
 
         with pytest.raises(ValueError, match="Invalid severity_filter"):
-            validate_library(
-                project_root, lexibrary_dir, severity_filter="critical"
-            )
+            validate_library(project_root, lexibrary_dir, severity_filter="critical")
 
 
 # ---------------------------------------------------------------------------
@@ -434,15 +409,11 @@ class TestCheckFilter:
 
         # Create missing source (error) and stale hash (warning)
         _write_design_file(lexibrary_dir, "src/missing.py", source_hash="abc")
-        source = _write_source_file(project_root, "src/stale.py", "# stale\n")
-        _write_design_file(
-            lexibrary_dir, "src/stale.py", source_hash="wrong"
-        )
+        _write_source_file(project_root, "src/stale.py", "# stale\n")
+        _write_design_file(lexibrary_dir, "src/stale.py", source_hash="wrong")
 
         # Only run hash_freshness check
-        report = validate_library(
-            project_root, lexibrary_dir, check_filter="hash_freshness"
-        )
+        report = validate_library(project_root, lexibrary_dir, check_filter="hash_freshness")
 
         # Should only contain hash_freshness issues
         assert all(i.check == "hash_freshness" for i in report.issues)
@@ -459,9 +430,7 @@ class TestCheckFilter:
         # Create design file for non-existent source
         _write_design_file(lexibrary_dir, "src/phantom.py", source_hash="abc")
 
-        report = validate_library(
-            project_root, lexibrary_dir, check_filter="file_existence"
-        )
+        report = validate_library(project_root, lexibrary_dir, check_filter="file_existence")
 
         assert len(report.issues) >= 1
         assert all(i.check == "file_existence" for i in report.issues)
@@ -474,9 +443,7 @@ class TestCheckFilter:
         lexibrary_dir.mkdir()
 
         with pytest.raises(ValueError, match="Unknown check"):
-            validate_library(
-                project_root, lexibrary_dir, check_filter="nonexistent_check"
-            )
+            validate_library(project_root, lexibrary_dir, check_filter="nonexistent_check")
 
     def test_all_registered_checks_are_valid(self) -> None:
         """Every key in AVAILABLE_CHECKS should be a valid check name."""
@@ -503,10 +470,8 @@ class TestCheckFilter:
         (lexibrary_dir / "concepts").mkdir(parents=True, exist_ok=True)
 
         # Create stale hash (warning-severity check)
-        source = _write_source_file(project_root, "src/stale.py", "# stale\n")
-        _write_design_file(
-            lexibrary_dir, "src/stale.py", source_hash="wrong"
-        )
+        _write_source_file(project_root, "src/stale.py", "# stale\n")
+        _write_design_file(lexibrary_dir, "src/stale.py", source_hash="wrong")
 
         # Filter to error severity only + hash_freshness check
         # hash_freshness is a warning-severity check, so it should be excluded

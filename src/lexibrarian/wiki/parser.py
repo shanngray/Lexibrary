@@ -44,7 +44,7 @@ def parse_concept_file(path: Path) -> ConceptFile | None:
         _ = exc
         return None
 
-    body = text[fm_match.end():]
+    body = text[fm_match.end() :]
 
     summary = _extract_summary(body)
     related_concepts = _WIKILINK_RE.findall(body)
@@ -92,8 +92,6 @@ def _extract_decision_log(body: str) -> list[str]:
             break
         if in_section:
             stripped = line.strip()
-            if stripped.startswith("- "):
-                items.append(stripped[2:])
-            elif stripped.startswith("* "):
+            if stripped.startswith("- ") or stripped.startswith("* "):
                 items.append(stripped[2:])
     return items

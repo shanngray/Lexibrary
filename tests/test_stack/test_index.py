@@ -98,9 +98,7 @@ def stack_dir(tmp_path: Path) -> Path:
 class TestBuild:
     """Tests for StackIndex.build()."""
 
-    def test_build_from_stack_directory(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_build_from_stack_directory(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", title="Post one")
         _make_post(stack_dir, post_id="ST-002", title="Post two")
         _make_post(stack_dir, post_id="ST-003", title="Post three")
@@ -112,9 +110,7 @@ class TestBuild:
         idx = StackIndex.build(tmp_path)
         assert len(idx) == 0
 
-    def test_build_skips_malformed_files(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_build_skips_malformed_files(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", title="Valid post")
         # Write a malformed file
         (stack_dir / "ST-002-bad.md").write_text("not valid yaml", encoding="utf-8")
@@ -136,9 +132,7 @@ class TestBuild:
 class TestSearch:
     """Tests for StackIndex.search()."""
 
-    def test_search_matches_title(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_search_matches_title(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", title="Timezone conversion bug")
 
         idx = StackIndex.build(tmp_path)
@@ -146,9 +140,7 @@ class TestSearch:
         assert len(results) == 1
         assert results[0].frontmatter.id == "ST-001"
 
-    def test_search_matches_problem_body(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_search_matches_problem_body(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(
             stack_dir,
             post_id="ST-001",
@@ -160,9 +152,7 @@ class TestSearch:
         results = idx.search("datetime.now")
         assert len(results) == 1
 
-    def test_search_matches_answer_body(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_search_matches_answer_body(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(
             stack_dir,
             post_id="ST-001",
@@ -174,9 +164,7 @@ class TestSearch:
         results = idx.search("utils/time.py")
         assert len(results) == 1
 
-    def test_search_matches_tags(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_search_matches_tags(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(
             stack_dir,
             post_id="ST-001",
@@ -188,9 +176,7 @@ class TestSearch:
         results = idx.search("data-integrity")
         assert len(results) == 1
 
-    def test_search_is_case_insensitive(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_search_is_case_insensitive(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", title="Timezone conversion bug")
 
         idx = StackIndex.build(tmp_path)
@@ -199,35 +185,23 @@ class TestSearch:
         assert len(lower) == len(upper) == 1
         assert lower[0].frontmatter.id == upper[0].frontmatter.id
 
-    def test_search_no_matches(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_search_no_matches(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", title="Something else")
 
         idx = StackIndex.build(tmp_path)
         results = idx.search("nonexistent-query-xyz")
         assert results == []
 
-    def test_search_empty_query(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_search_empty_query(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", title="Something")
 
         idx = StackIndex.build(tmp_path)
         assert idx.search("") == []
 
-    def test_search_sorted_by_votes_descending(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
-        _make_post(
-            stack_dir, post_id="ST-001", title="Common bug report", votes=2
-        )
-        _make_post(
-            stack_dir, post_id="ST-002", title="Another common bug report", votes=10
-        )
-        _make_post(
-            stack_dir, post_id="ST-003", title="Yet another common bug", votes=5
-        )
+    def test_search_sorted_by_votes_descending(self, tmp_path: Path, stack_dir: Path) -> None:
+        _make_post(stack_dir, post_id="ST-001", title="Common bug report", votes=2)
+        _make_post(stack_dir, post_id="ST-002", title="Another common bug report", votes=10)
+        _make_post(stack_dir, post_id="ST-003", title="Yet another common bug", votes=5)
 
         idx = StackIndex.build(tmp_path)
         results = idx.search("common bug")
@@ -243,9 +217,7 @@ class TestSearch:
 class TestByTag:
     """Tests for StackIndex.by_tag()."""
 
-    def test_filter_existing_tag(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_filter_existing_tag(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", tags=["datetime", "bug"])
         _make_post(stack_dir, post_id="ST-002", tags=["datetime"])
         _make_post(stack_dir, post_id="ST-003", tags=["config"])
@@ -254,17 +226,13 @@ class TestByTag:
         results = idx.by_tag("datetime")
         assert len(results) == 2
 
-    def test_filter_nonexistent_tag(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_filter_nonexistent_tag(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", tags=["bug"])
 
         idx = StackIndex.build(tmp_path)
         assert idx.by_tag("nonexistent") == []
 
-    def test_filter_tag_case_insensitive(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_filter_tag_case_insensitive(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", tags=["DateTime"])
 
         idx = StackIndex.build(tmp_path)
@@ -275,9 +243,7 @@ class TestByTag:
 class TestByScope:
     """Tests for StackIndex.by_scope()."""
 
-    def test_filter_by_directory_scope(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_filter_by_directory_scope(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(
             stack_dir,
             post_id="ST-001",
@@ -294,9 +260,7 @@ class TestByScope:
         assert len(results) == 1
         assert results[0].frontmatter.id == "ST-001"
 
-    def test_filter_by_exact_file_scope(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_filter_by_exact_file_scope(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(
             stack_dir,
             post_id="ST-001",
@@ -317,9 +281,7 @@ class TestByScope:
 class TestByStatus:
     """Tests for StackIndex.by_status()."""
 
-    def test_filter_open_posts(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_filter_open_posts(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", status="open")
         _make_post(stack_dir, post_id="ST-002", status="resolved")
         _make_post(stack_dir, post_id="ST-003", status="open")
@@ -329,9 +291,7 @@ class TestByStatus:
         assert len(results) == 2
         assert all(r.frontmatter.status == "open" for r in results)
 
-    def test_filter_resolved_posts(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_filter_resolved_posts(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", status="open")
         _make_post(stack_dir, post_id="ST-002", status="resolved")
 
@@ -344,9 +304,7 @@ class TestByStatus:
 class TestByConcept:
     """Tests for StackIndex.by_concept()."""
 
-    def test_filter_by_concept_name(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_filter_by_concept_name(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(
             stack_dir,
             post_id="ST-001",
@@ -363,9 +321,7 @@ class TestByConcept:
         assert len(results) == 1
         assert results[0].frontmatter.id == "ST-001"
 
-    def test_filter_concept_case_insensitive(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_filter_concept_case_insensitive(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(
             stack_dir,
             post_id="ST-001",
@@ -376,9 +332,7 @@ class TestByConcept:
         results = idx.by_concept("datehandling")
         assert len(results) == 1
 
-    def test_filter_concept_no_match(
-        self, tmp_path: Path, stack_dir: Path
-    ) -> None:
+    def test_filter_concept_no_match(self, tmp_path: Path, stack_dir: Path) -> None:
         _make_post(stack_dir, post_id="ST-001", concepts=["DateHandling"])
 
         idx = StackIndex.build(tmp_path)

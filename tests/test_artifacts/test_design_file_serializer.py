@@ -77,7 +77,7 @@ class TestSerializeDesignFileStructure:
         assert result.count("```python") == 1
         # closing ``` after opening
         ic_idx = result.index("```python")
-        rest = result[ic_idx + 9:]
+        rest = result[ic_idx + 9 :]
         assert "```" in rest
 
     def test_dependencies_section_empty(self) -> None:

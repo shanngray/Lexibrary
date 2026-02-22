@@ -16,19 +16,50 @@ class CrawlConfig(BaseModel):
     binary_extensions: list[str] = Field(
         default_factory=lambda: [
             # Images
-            ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".webp",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".ico",
+            ".svg",
+            ".webp",
             # Audio/video
-            ".mp3", ".mp4", ".wav", ".ogg", ".webm",
+            ".mp3",
+            ".mp4",
+            ".wav",
+            ".ogg",
+            ".webm",
             # Fonts
-            ".woff", ".woff2", ".ttf", ".eot",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot",
             # Archives
-            ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
+            ".zip",
+            ".tar",
+            ".gz",
+            ".bz2",
+            ".7z",
+            ".rar",
             # Documents
-            ".pdf", ".doc", ".docx", ".xls", ".xlsx",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".xls",
+            ".xlsx",
             # Executables / compiled
-            ".exe", ".dll", ".so", ".dylib", ".pyc", ".pyo", ".class", ".o", ".obj",
+            ".exe",
+            ".dll",
+            ".so",
+            ".dylib",
+            ".pyc",
+            ".pyo",
+            ".class",
+            ".o",
+            ".obj",
             # Database
-            ".sqlite", ".db",
+            ".sqlite",
+            ".db",
         ]
     )
 
@@ -61,7 +92,6 @@ class TokenBudgetConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     start_here_tokens: int = 800
-    handoff_tokens: int = 100
     design_file_tokens: int = 400
     design_file_abridged_tokens: int = 100
     aindex_tokens: int = 200
@@ -85,7 +115,6 @@ class IgnoreConfig(BaseModel):
     additional_patterns: list[str] = Field(
         default_factory=lambda: [
             ".lexibrary/START_HERE.md",
-            ".lexibrary/HANDOFF.md",
             ".lexibrary/**/*.md",
             ".lexibrary/**/.aindex",
             "node_modules/",
@@ -114,9 +143,15 @@ class ASTConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    languages: list[str] = Field(
-        default_factory=lambda: ["python", "typescript", "javascript"]
-    )
+    languages: list[str] = Field(default_factory=lambda: ["python", "typescript", "javascript"])
+
+
+class IWHConfig(BaseModel):
+    """I Was Here (IWH) configuration."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
 
 
 class LexibraryConfig(BaseModel):
@@ -125,6 +160,9 @@ class LexibraryConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     scope_root: str = "."
+    project_name: str = ""
+    agent_environment: list[str] = Field(default_factory=list)
+    iwh: IWHConfig = Field(default_factory=IWHConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     token_budgets: TokenBudgetConfig = Field(default_factory=TokenBudgetConfig)
     mapping: MappingConfig = Field(default_factory=MappingConfig)
