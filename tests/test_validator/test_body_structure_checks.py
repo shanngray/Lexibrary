@@ -26,6 +26,7 @@ def _write_design_file(
     *,
     include_h1: bool = True,
     include_interface_contract: bool = True,
+    include_reexports: bool = False,
     include_dependencies: bool = True,
     include_dependents: bool = True,
     include_footer: bool = True,
@@ -55,7 +56,16 @@ def _write_design_file(
         parts.append(f"# {source_path}")
         parts.append("")
 
-    if include_interface_contract:
+    if include_reexports:
+        parts.extend(
+            [
+                "## Re-exports",
+                "",
+                "- `Foo` from `src/lexibrary/foo.py`",
+                "",
+            ]
+        )
+    elif include_interface_contract:
         parts.extend(
             [
                 "## Interface Contract",
@@ -226,7 +236,7 @@ class TestCheckDesignStructure:
         assert h1_issues[0].check == "design_structure"
 
     def test_missing_interface_contract_reports_warning(self, tmp_path: Path) -> None:
-        """When a design file lacks Interface Contract section, a warning is returned."""
+        """When a design file lacks both Interface Contract and Re-exports, a warning is returned."""
         project_root = tmp_path
         lexibrary_dir = tmp_path / ".lexibrary"
         lexibrary_dir.mkdir()
@@ -237,6 +247,23 @@ class TestCheckDesignStructure:
         ic_issues = [i for i in issues if "Interface Contract" in i.message]
         assert len(ic_issues) == 1
         assert ic_issues[0].severity == "warning"
+        assert "Re-exports" in ic_issues[0].message
+
+    def test_aggregator_with_reexports_passes(self, tmp_path: Path) -> None:
+        """Aggregator design file with ## Re-exports satisfies the public-surface requirement."""
+        project_root = tmp_path
+        lexibrary_dir = tmp_path / ".lexibrary"
+        lexibrary_dir.mkdir()
+
+        _write_design_file(
+            lexibrary_dir,
+            "src/lexibrary/__init__.py",
+            include_interface_contract=False,
+            include_reexports=True,
+        )
+
+        issues = check_design_structure(project_root, lexibrary_dir)
+        assert issues == []
 
     def test_missing_metadata_footer_reports_warning(self, tmp_path: Path) -> None:
         """When a design file has no metadata footer, a warning is returned."""

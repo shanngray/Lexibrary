@@ -123,12 +123,3 @@ symbols:
   max_call_path_items: 10
   include_data_flows: false
 lexibrary_version: 0.6.3
-conventions:
-  lookup_display_limit: 5
-  deprecation_confirm: human
-  curator_deprecation_confirm: false
-topology:
-  detail_dirs: []
-validator:
-  fix_lookup_token_budget_condense: false
-  fix_orphaned_iwh_signals_delete: true

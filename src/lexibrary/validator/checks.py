@@ -3963,10 +3963,14 @@ def check_design_structure(
     Checks each ``.md`` file in ``.lexibrary/designs/`` (recursively) for:
 
     - An H1 heading (source path)
-    - A ``## Interface Contract`` section
+    - A ``## Interface Contract`` or ``## Re-exports`` section
     - A ``## Dependencies`` section
     - A ``## Dependents`` section
     - A ``<!-- lexibrary:meta ... -->`` metadata footer
+
+    Aggregator design files (re-export-only modules) render
+    ``## Re-exports`` instead of ``## Interface Contract``; either
+    section satisfies the public-surface requirement.
 
     Files that fail frontmatter parsing are skipped (handled by the
     ``design_frontmatter`` check).
@@ -3984,7 +3988,8 @@ def check_design_structure(
     if not design_files:
         return issues
 
-    required_sections = ["Interface Contract", "Dependencies", "Dependents"]
+    public_surface_sections = ("Interface Contract", "Re-exports")
+    required_sections = ["Dependencies", "Dependents"]
 
     for design_path in design_files:
         rel_path = _rel(design_path, project_root)
@@ -4037,6 +4042,22 @@ def check_design_structure(
             if stripped.startswith("## "):
                 section_name = stripped[3:].strip()
                 found_sections.add(section_name)
+
+        if not any(section in found_sections for section in public_surface_sections):
+            design_rel = str(design_path.relative_to(lexibrary_dir / DESIGNS_DIR))
+            source_from_design = design_rel[:-3] if design_rel.endswith(".md") else design_rel
+            issues.append(
+                ValidationIssue(
+                    severity="warning",
+                    check="design_structure",
+                    message="Missing '## Interface Contract' or '## Re-exports' section",
+                    artifact=rel_path,
+                    suggestion=(
+                        f"Run: lexi design update {source_from_design} "
+                        f"to regenerate the design file with all required sections."
+                    ),
+                )
+            )
 
         for section in required_sections:
             if section not in found_sections:
