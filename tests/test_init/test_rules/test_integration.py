@@ -123,12 +123,12 @@ class TestFullFlowPerEnvironment:
         assert "lexi search" in skills_content
 
     def test_codex_full_flow(self, tmp_path: Path) -> None:
-        """Codex generates AGENTS.md with embedded skills."""
+        """Codex generates AGENTS.md, repo skills, custom agents, and hooks."""
         results = generate_rules(tmp_path, ["codex"])
 
         assert "codex" in results
         paths = results["codex"]
-        assert len(paths) == 1
+        assert len(paths) == 14
 
         agents_md = tmp_path / "AGENTS.md"
         assert agents_md.exists()
@@ -137,8 +137,12 @@ class TestFullFlowPerEnvironment:
         assert MARKER_END in content
         assert "TOPOLOGY.md" in content
         assert "lexi lookup" in content
-        # Codex embeds search skills inline
-        assert "lexi search" in content
+
+        search_skill = tmp_path / ".agents" / "skills" / "lexi-search" / "SKILL.md"
+        assert search_skill.exists()
+        assert "lexi search" in search_skill.read_text(encoding="utf-8")
+        assert (tmp_path / ".codex" / "agents" / "code.toml").exists()
+        assert (tmp_path / ".codex" / "hooks.json").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +170,9 @@ class TestMultiEnvironment:
         assert (tmp_path / ".cursor" / "rules" / "lexibrary.mdc").exists()
         assert (tmp_path / ".cursor" / "skills" / "lexi.md").exists()
         assert (tmp_path / "AGENTS.md").exists()
+        assert (tmp_path / ".agents" / "skills" / "lexi-search" / "SKILL.md").exists()
+        assert (tmp_path / ".codex" / "agents" / "code.toml").exists()
+        assert (tmp_path / ".codex" / "hooks.json").exists()
         assert (tmp_path / "LEXIBRARY_RULES.md").exists()
 
     def test_claude_and_codex_coexist(self, tmp_path: Path) -> None:
@@ -183,8 +190,9 @@ class TestMultiEnvironment:
         assert "TOPOLOGY.md" in claude_content
         assert "TOPOLOGY.md" in agents_content
 
-        # AGENTS.md has embedded skills; CLAUDE.md does not (uses separate skill files)
-        assert "lexi search" in agents_content
+        # Codex skills are separate repo-scoped files; Claude uses .claude/skills.
+        assert (tmp_path / ".agents" / "skills" / "lexi-search" / "SKILL.md").exists()
+        assert (tmp_path / ".claude" / "skills" / "lexi-search" / "SKILL.md").exists()
 
     def test_multi_env_does_not_interfere(self, tmp_path: Path) -> None:
         """Generating multiple environments does not corrupt other environments' files."""

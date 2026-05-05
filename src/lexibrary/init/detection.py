@@ -51,7 +51,7 @@ _AGENT_MARKERS: list[tuple[str, list[str]]] = [
     # (environment_name, [marker_paths...])
     ("claude", [".claude/", "CLAUDE.md"]),
     ("cursor", [".cursor/"]),
-    ("codex", ["AGENTS.md"]),
+    ("codex", ["AGENTS.md", ".codex/", ".agents/skills/"]),
 ]
 
 _AGENT_RULES_FILES: dict[str, list[str]] = {
@@ -65,7 +65,7 @@ _AGENT_RULES_FILES: dict[str, list[str]] = {
 _AGENT_REQUIRED_DIRS: dict[str, list[str]] = {
     "claude": [".claude/", ".claude/skills/"],
     "cursor": [".cursor/", ".cursor/rules/", ".cursor/skills/"],
-    "codex": [],  # codex only writes AGENTS.md at root
+    "codex": [".agents/skills/", ".codex/", ".codex/agents/", ".codex/hooks/"],
 }
 
 # ---------------------------------------------------------------------------

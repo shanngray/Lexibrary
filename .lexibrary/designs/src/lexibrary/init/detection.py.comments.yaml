@@ -1,0 +1,5 @@
+comments:
+- body: Codex environment detection now treats AGENTS.md, .codex/, and .agents/skills/
+    as Codex markers, and the wizard warns when Codex's generated skill, agent, or
+    hook directories are missing.
+  date: '2026-05-05T21:11:53.014598Z'

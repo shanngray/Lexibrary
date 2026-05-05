@@ -1,0 +1,6 @@
+comments:
+- body: 'Codex generation now mirrors current Codex architecture: AGENTS.md carries
+    core rules only, .agents/skills carries reusable skills, and .codex carries custom
+    agents plus hooks. This keeps Codex instructions discoverable without embedding
+    full skill bodies in AGENTS.md.'
+  date: '2026-05-05T21:11:48.986297Z'

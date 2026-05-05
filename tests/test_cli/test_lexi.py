@@ -3369,9 +3369,7 @@ class TestLexiValidateCommand:
         import json as _json
 
         project = _setup_validate_project(tmp_path)
-        result = self._invoke(
-            project, ["validate", "--check", "forward_dependencies", "--json"]
-        )
+        result = self._invoke(project, ["validate", "--check", "forward_dependencies", "--json"])
         output = result.output  # type: ignore[union-attr]
         parsed = _json.loads(output)
         # If the default warning gate had been applied to an explicit

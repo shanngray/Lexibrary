@@ -230,6 +230,16 @@ class TestDetectAgentEnvironments:
         result = detect_agent_environments(tmp_path)
         assert "codex" in result
 
+    def test_detect_codex_from_codex_directory(self, tmp_path: Path) -> None:
+        (tmp_path / ".codex").mkdir()
+        result = detect_agent_environments(tmp_path)
+        assert "codex" in result
+
+    def test_detect_codex_from_repo_skills_directory(self, tmp_path: Path) -> None:
+        (tmp_path / ".agents" / "skills").mkdir(parents=True)
+        result = detect_agent_environments(tmp_path)
+        assert "codex" in result
+
     def test_detect_multiple_environments(self, tmp_path: Path) -> None:
         (tmp_path / ".claude").mkdir()
         (tmp_path / ".cursor").mkdir()
@@ -365,9 +375,29 @@ class TestCheckMissingAgentDirs:
         result = check_missing_agent_dirs(tmp_path, ["cursor"])
         assert result == {}
 
-    def test_codex_no_dirs_needed(self, tmp_path: Path) -> None:
+    def test_codex_dirs_missing(self, tmp_path: Path) -> None:
+        result = check_missing_agent_dirs(tmp_path, ["codex"])
+        assert "codex" in result
+        assert ".agents/skills/" in result["codex"]
+        assert ".codex/" in result["codex"]
+        assert ".codex/agents/" in result["codex"]
+        assert ".codex/hooks/" in result["codex"]
+
+    def test_codex_dirs_exist(self, tmp_path: Path) -> None:
+        (tmp_path / ".agents" / "skills").mkdir(parents=True)
+        (tmp_path / ".codex" / "agents").mkdir(parents=True)
+        (tmp_path / ".codex" / "hooks").mkdir(parents=True)
         result = check_missing_agent_dirs(tmp_path, ["codex"])
         assert result == {}
+
+    def test_codex_partial_dirs(self, tmp_path: Path) -> None:
+        (tmp_path / ".codex").mkdir()
+        result = check_missing_agent_dirs(tmp_path, ["codex"])
+        assert "codex" in result
+        assert ".codex/" not in result["codex"]
+        assert ".agents/skills/" in result["codex"]
+        assert ".codex/agents/" in result["codex"]
+        assert ".codex/hooks/" in result["codex"]
 
     def test_multiple_envs_mixed(self, tmp_path: Path) -> None:
         (tmp_path / ".claude" / "skills").mkdir(parents=True)
