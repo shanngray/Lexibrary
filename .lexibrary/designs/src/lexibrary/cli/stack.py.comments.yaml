@@ -1,0 +1,7 @@
+comments:
+- body: stack_view now uses parse_stack_post_strict and surfaces StackPostValidationError
+    detail via error()+hint(), instead of swallowing the failure as a generic 'Failed
+    to parse post'. Other strict callers (services/view.py) follow the same pattern.
+    The non-strict parse_stack_post is still used by batch traversals where ignoring
+    bad files is intentional.
+  date: '2026-04-28T18:53:38.961401Z'

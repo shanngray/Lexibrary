@@ -97,6 +97,8 @@ lexibrary-overview.md
 TODO.md
 **/.iwh
 data-gym-cache/
+.agents/
+.codex/
 
 # Dolt database files (added by bd init)
 .dolt/

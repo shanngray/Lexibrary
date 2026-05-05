@@ -101,8 +101,7 @@ def init(
     # Re-init guard
     if (project_root / ".lexibrary").exists():
         error(
-            "Project already initialised. "
-            "Use `lexictl upgrade` to refresh agent rules and config."
+            "Project already initialised. Use `lexictl upgrade` to refresh agent rules and config."
         )
         raise typer.Exit(1)
 
@@ -935,9 +934,7 @@ def upgrade(
         info("Registered upgrade steps (run in order):\n")
         for step in UPGRADE_STEPS:
             suffix = (
-                f"  (requires --{step.requires_flag})"
-                if step.requires_flag is not None
-                else ""
+                f"  (requires --{step.requires_flag})" if step.requires_flag is not None else ""
             )
             info(f"  {step.name}{suffix}")
             info(f"    {step.description}")

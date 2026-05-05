@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lexibrary.wiki.parser import parse_concept_file
+import pytest
+
+from lexibrary.wiki.parser import (
+    ConceptValidationError,
+    parse_concept_file,
+    parse_concept_file_strict,
+)
 
 VALID_CONCEPT = """\
 ---
@@ -208,3 +214,125 @@ class TestParseConceptFileHtmlComments:
         result = parse_concept_file(path)
         assert result is not None
         assert "<!-- keep this comment -->" in result.body
+
+
+# ---------------------------------------------------------------------------
+# Strict parser tests
+# ---------------------------------------------------------------------------
+
+_CONCEPT_INVALID_STATUS = """\
+---
+title: Bad Status Concept
+id: CN-099
+status: unknown_status
+---
+Some body text.
+"""
+
+_CONCEPT_MISSING_TITLE = """\
+---
+id: CN-098
+status: active
+---
+Some body text.
+"""
+
+_CONCEPT_NO_FRONTMATTER = """\
+# Just a heading
+
+No frontmatter here.
+"""
+
+_CONCEPT_VALID = """\
+---
+title: Valid Concept
+id: CN-097
+status: active
+---
+This is the concept body.
+"""
+
+
+class TestStrictParserValidationErrors:
+    """parse_concept_file_strict raises ConceptValidationError for bad frontmatter."""
+
+    def test_invalid_status_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "CN-099-bad-status.md"
+        p.write_text(_CONCEPT_INVALID_STATUS)
+        with pytest.raises(ConceptValidationError) as exc_info:
+            parse_concept_file_strict(p)
+        detail = exc_info.value.detail
+        # Must name the field
+        assert "status" in detail
+        # Must mention the bad value
+        assert "unknown_status" in detail
+
+    def test_invalid_status_lenient_returns_none(self, tmp_path: Path) -> None:
+        """parse_concept_file (lenient) still returns None for invalid status."""
+        p = tmp_path / "CN-099-bad-status.md"
+        p.write_text(_CONCEPT_INVALID_STATUS)
+        result = parse_concept_file(p)
+        assert result is None
+
+    def test_missing_required_field_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "CN-098-missing-title.md"
+        p.write_text(_CONCEPT_MISSING_TITLE)
+        with pytest.raises(ConceptValidationError) as exc_info:
+            parse_concept_file_strict(p)
+        detail = exc_info.value.detail
+        assert "title" in detail
+
+    def test_missing_required_field_lenient_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "CN-098-missing-title.md"
+        p.write_text(_CONCEPT_MISSING_TITLE)
+        result = parse_concept_file(p)
+        assert result is None
+
+    def test_nonexistent_file_returns_none_strict(self, tmp_path: Path) -> None:
+        """Nonexistent file returns None even from the strict parser."""
+        p = tmp_path / "does-not-exist.md"
+        result = parse_concept_file_strict(p)
+        assert result is None
+
+    def test_no_frontmatter_returns_none_strict(self, tmp_path: Path) -> None:
+        """File with no frontmatter returns None even from the strict parser."""
+        p = tmp_path / "no-fm.md"
+        p.write_text(_CONCEPT_NO_FRONTMATTER)
+        result = parse_concept_file_strict(p)
+        assert result is None
+
+    def test_valid_concept_parses_strict(self, tmp_path: Path) -> None:
+        """Valid concepts parse correctly via the strict parser."""
+        p = tmp_path / "CN-097-valid.md"
+        p.write_text(_CONCEPT_VALID)
+        result = parse_concept_file_strict(p)
+        assert result is not None
+        assert result.frontmatter.id == "CN-097"
+        assert result.frontmatter.title == "Valid Concept"
+
+
+# ---------------------------------------------------------------------------
+# lexi view integration test for concept
+# ---------------------------------------------------------------------------
+
+
+class TestViewConceptParseErrorHint:
+    """lexi view surfaces field name and bad value in the error hint for concepts."""
+
+    def test_malformed_concept_surfaces_hint(self, tmp_path: Path) -> None:
+        from lexibrary.services.view import ArtifactParseError, resolve_and_load
+
+        root = tmp_path
+        lib = root / ".lexibrary"
+        (lib / "concepts").mkdir(parents=True)
+
+        bad_file = lib / "concepts" / "CN-099-bad-status.md"
+        bad_file.write_text(_CONCEPT_INVALID_STATUS)
+
+        with pytest.raises(ArtifactParseError) as exc_info:
+            resolve_and_load(root, "CN-099")
+
+        hint = exc_info.value.hint
+        # Field name and bad value must both appear in the hint
+        assert "status" in hint
+        assert "unknown_status" in hint

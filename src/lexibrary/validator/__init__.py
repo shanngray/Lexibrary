@@ -1,4 +1,21 @@
-"""Validator module -- library health checks and validation reporting."""
+"""Validator module -- library health checks and validation reporting.
+
+Adding a new check is a six-step ritual.  Skip any step and CI breaks:
+
+1. Implement ``check_<name>(project_root, lexibrary_dir) -> list[ValidationIssue]``
+   in :mod:`lexibrary.validator.checks`.
+2. Import it here, in this module.
+3. Add it to :data:`AVAILABLE_CHECKS` below with the correct severity.
+4. Add the key to ``expected`` in
+   ``tests/test_validator/test_orchestrator.py::test_all_registered_checks_are_valid``.
+5. Bump the count assertion in
+   ``tests/test_validator/test_orchestrator.py::test_available_checks_count_is_47``.
+6. Add the key to either ``_HASH_LAYER_CHECKS`` or ``_GRAPH_LAYER_CHECKS``
+   in :mod:`lexibrary.curator.coordinator` -- the two-pass collect partition
+   is asserted total/disjoint at module import time, so omitting this step
+   fails ~25 test modules at collection.  Hash layer = on-disk file
+   contents only; graph layer = needs ``index.db`` or ``symbols.db``.
+"""
 
 from __future__ import annotations
 
@@ -42,6 +59,7 @@ from lexibrary.validator.checks import (
     check_orphan_concepts,
     check_orphaned_designs,
     check_orphaned_iwh_signals,
+    check_parseable_artifacts,
     check_playbook_deprecated_ttl,
     check_playbook_frontmatter,
     check_playbook_staleness,
@@ -138,6 +156,8 @@ AVAILABLE_CHECKS: dict[str, tuple[CheckFn, Severity]] = {
     "playbook_wikilinks": (check_playbook_wikilinks, "error"),
     "playbook_staleness": (check_playbook_staleness, "info"),
     "playbook_deprecated_ttl": (check_playbook_deprecated_ttl, "info"),
+    # --- Parser-level artifact validation ---
+    "parseable_artifacts": (check_parseable_artifacts, "error"),
 }
 
 # Severity levels ordered from most to least severe.

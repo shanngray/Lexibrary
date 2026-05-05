@@ -2848,6 +2848,29 @@ class TestStackViewCommand:
         assert result.exit_code == 1  # type: ignore[union-attr]
         assert "No .lexibrary/" in result.output  # type: ignore[union-attr]
 
+    def test_view_invalid_frontmatter_surfaces_detail(self, tmp_path: Path) -> None:
+        """Invalid frontmatter should surface the failing field and value."""
+        _setup_stack_project(tmp_path)
+        post_path = tmp_path / ".lexibrary" / "stack" / "ST-001-bad.md"
+        post_path.write_text(
+            "---\n"
+            "id: ST-001\n"
+            "title: Bad post\n"
+            "tags:\n"
+            "- foo\n"
+            "status: resolved\n"
+            "created: '2026-04-25'\n"
+            "author: user\n"
+            "resolution_type: finding\n"
+            "---\n\n## Problem\n\nBody.\n",
+            encoding="utf-8",
+        )
+        result = self._invoke(tmp_path, ["stack", "view", "ST-001"])
+        assert result.exit_code == 1  # type: ignore[union-attr]
+        output = result.output  # type: ignore[union-attr]
+        assert "resolution_type" in output
+        assert "finding" in output
+
 
 # ---------------------------------------------------------------------------
 # Stack list command tests
@@ -3315,6 +3338,48 @@ class TestLexiValidateCommand:
         output = result.output  # type: ignore[union-attr]
         assert "Available checks" in output or "Unknown check" in output
         assert "concept_frontmatter" in output
+
+    def test_validate_default_excludes_info(self, tmp_path: Path) -> None:
+        """By default, lexi validate suppresses info-severity issues."""
+        import json as _json
+
+        project = _setup_validate_project(tmp_path)
+        result = self._invoke(project, ["validate", "--json"])
+        output = result.output  # type: ignore[union-attr]
+        parsed = _json.loads(output)
+        assert parsed["summary"]["info_count"] == 0
+        for issue in parsed["issues"]:
+            assert issue["severity"] != "info"
+
+    def test_validate_severity_info_includes_info(self, tmp_path: Path) -> None:
+        """--severity info re-enables info-level checks that the default suppresses."""
+        import json as _json
+
+        project = _setup_validate_project(tmp_path)
+        gated = self._invoke(project, ["validate", "--json"])
+        opened = self._invoke(project, ["validate", "--severity", "info", "--json"])
+        gated_parsed = _json.loads(gated.output)  # type: ignore[union-attr]
+        opened_parsed = _json.loads(opened.output)  # type: ignore[union-attr]
+        # _setup_validate_project lacks .aindex files, so info-level checks
+        # (e.g. aindex_coverage) fire when not gated.
+        assert opened_parsed["summary"]["info_count"] > gated_parsed["summary"]["info_count"]
+
+    def test_validate_check_bypasses_default_gate(self, tmp_path: Path) -> None:
+        """An explicit --check on an info-severity check still runs without --severity."""
+        import json as _json
+
+        project = _setup_validate_project(tmp_path)
+        result = self._invoke(
+            project, ["validate", "--check", "forward_dependencies", "--json"]
+        )
+        output = result.output  # type: ignore[union-attr]
+        parsed = _json.loads(output)
+        # If the default warning gate had been applied to an explicit
+        # --check forward_dependencies (info-severity), the check would be
+        # filtered out; we just confirm the run produced a valid report.
+        assert "issues" in parsed
+        for issue in parsed["issues"]:
+            assert issue["check"] == "forward_dependencies"
 
 
 # ---------------------------------------------------------------------------

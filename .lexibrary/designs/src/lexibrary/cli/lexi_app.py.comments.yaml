@@ -1,0 +1,16 @@
+comments:
+- body: "lexi validate now defaults to showing only error- and warning-severity issues.\
+    \ The new --show-info flag re-enables info-level checks. An explicit --severity,\
+    \ --check, or --fix bypasses the gate (so picking a single info check still runs\
+    \ it, and the fix flow still sees info-severity escalation checks like convention_stale).\
+    \ lexictl validate is intentionally untouched \u2014 it continues to surface all\
+    \ severities by default for the maintainer view."
+  date: '2026-04-28T19:04:19.284713Z'
+- body: "Correction to the prior comment: there is no --show-info flag. lexi validate\
+    \ defaults to severity='warning' (errors and warnings only) when none of --severity,\
+    \ --check, or --fix is supplied; users opt back into info messages with --severity\
+    \ info. --check and --fix bypass the gate so single-check runs and the interactive\
+    \ fix flow continue to see info-severity escalation checks like convention_stale.\
+    \ lexictl validate remains unchanged \u2014 it still surfaces all severities by\
+    \ default for the maintainer view."
+  date: '2026-04-28T19:28:00.335529Z'

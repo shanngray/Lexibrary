@@ -15,7 +15,10 @@ from lexibrary.stack.models import (
 )
 
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n?", re.DOTALL)
-_FINDING_HEADER_RE = re.compile(r"^###\s+F(\d+)\s*$")
+# Matches ### F<n> with an optional em-dash/colon/hyphen title suffix.
+# Group 1: finding number (digits)
+# Group 2: optional title text after the separator (may be None)
+_FINDING_HEADER_RE = re.compile(r"^###\s+F(\d+)(?:\s*[—\-:]\s*(.+?))?\s*$")
 _METADATA_RE = re.compile(
     r"\*\*Date:\*\*\s*(\S+)\s*\|\s*"
     r"\*\*Author:\*\*\s*(\S+)\s*\|\s*"
@@ -31,11 +34,45 @@ _METADATA_RE = re.compile(
 _HTML_COMMENT_RE = re.compile(r"^\s*<!--.*-->\s*$")
 
 
+class StackPostValidationError(Exception):
+    """Raised by :func:`parse_stack_post_strict` when frontmatter fails validation.
+
+    Carries the human-readable *detail* string extracted from the underlying
+    ``yaml.YAMLError`` or Pydantic ``ValidationError`` so callers can surface
+    an actionable message without re-catching low-level exceptions.
+    """
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
 def parse_stack_post(path: Path) -> StackPost | None:
     """Parse a Stack post file into a StackPost model.
 
     Returns None if the file doesn't exist, has no valid frontmatter,
-    or frontmatter fails validation.
+    or frontmatter fails validation.  Callers that need a structured error
+    on validation failure should use :func:`parse_stack_post_strict` instead.
+    """
+    try:
+        return parse_stack_post_strict(path)
+    except StackPostValidationError:
+        return None
+
+
+def parse_stack_post_strict(path: Path) -> StackPost | None:
+    """Parse a Stack post file, raising on validation or YAML errors.
+
+    Returns ``None`` only for benign non-parse conditions:
+
+    - The file does not exist.
+    - An :class:`OSError` prevented reading the file.
+    - The file contains no YAML frontmatter block.
+
+    Raises :class:`StackPostValidationError` for any condition where a
+    frontmatter block *was* found but its content is malformed or fails
+    Pydantic validation.  The exception message names the field(s),
+    the bad value(s), and the allowed values so the user can fix the file.
     """
     if not path.exists():
         return None
@@ -49,13 +86,26 @@ def parse_stack_post(path: Path) -> StackPost | None:
     if not fm_match:
         return None
 
+    # Frontmatter block found — any error from here is a user-fixable problem.
     try:
         data = yaml.safe_load(fm_match.group(1))
-        if not isinstance(data, dict):
-            return None
+    except yaml.YAMLError as exc:
+        raise StackPostValidationError(f"YAML syntax error in frontmatter: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise StackPostValidationError(
+            f"Frontmatter must be a YAML mapping, got {type(data).__name__}"
+        )
+
+    try:
         frontmatter = StackPostFrontmatter(**data)
-    except (yaml.YAMLError, TypeError, ValueError):
-        return None
+    except (TypeError, ValueError) as exc:
+        # Pydantic 2 ValidationError is a subclass of ValueError; TypeError can
+        # arise from unexpected keyword arguments.  _format_validation_error
+        # extracts the structured error list when the exception is a Pydantic
+        # ValidationError; otherwise it falls back to str(exc).
+        detail = _format_validation_error(exc)
+        raise StackPostValidationError(detail) from exc
 
     raw_body = text[fm_match.end() :]
     problem, context, evidence, attempts = _extract_body_sections(raw_body)
@@ -70,6 +120,31 @@ def parse_stack_post(path: Path) -> StackPost | None:
         findings=findings,
         raw_body=raw_body,
     )
+
+
+def _format_validation_error(exc: Exception) -> str:
+    """Extract a human-readable detail string from a Pydantic ValidationError.
+
+    Falls back to ``str(exc)`` when the exception is not a Pydantic
+    ``ValidationError`` or when the errors list is empty.
+    """
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    if not isinstance(exc, ValidationError):
+        return str(exc)
+
+    errors = exc.errors()
+    if not errors:
+        return str(exc)
+
+    parts: list[str] = []
+    for err in errors:
+        loc = " -> ".join(str(part) for part in err.get("loc", ()))
+        msg = err.get("msg", "")
+        inp = err.get("input", "<unknown>")
+        parts.append(f"  field {loc!r}: {msg} (got {inp!r})")
+
+    return "Frontmatter validation failed:\n" + "\n".join(parts)
 
 
 def _extract_body_sections(body: str) -> tuple[str, str, list[str], list[str]]:
@@ -143,25 +218,26 @@ def _extract_findings(body: str) -> list[StackFinding]:
     findings: list[StackFinding] = []
 
     # Find all finding block start indices
-    finding_starts: list[tuple[int, int]] = []  # (line_index, finding_number)
+    finding_starts: list[tuple[int, int, str]] = []  # (line_index, finding_number, title)
     for i, line in enumerate(lines):
         m = _FINDING_HEADER_RE.match(line)
         if m:
-            finding_starts.append((i, int(m.group(1))))
+            finding_title = (m.group(2) or "").strip()
+            finding_starts.append((i, int(m.group(1)), finding_title))
 
-    for idx, (start_line, finding_num) in enumerate(finding_starts):
+    for idx, (start_line, finding_num, finding_title) in enumerate(finding_starts):
         # Determine end of this finding block
         end_line = finding_starts[idx + 1][0] if idx + 1 < len(finding_starts) else len(lines)
 
         finding_lines = lines[start_line + 1 : end_line]
-        finding = _parse_single_finding(finding_num, finding_lines)
+        finding = _parse_single_finding(finding_num, finding_title, finding_lines)
         if finding is not None:
             findings.append(finding)
 
     return findings
 
 
-def _parse_single_finding(number: int, lines: list[str]) -> StackFinding | None:
+def _parse_single_finding(number: int, title: str, lines: list[str]) -> StackFinding | None:
     """Parse a single finding block from its content lines."""
     finding_date = date.today()
     author = "unknown"
@@ -203,6 +279,7 @@ def _parse_single_finding(number: int, lines: list[str]) -> StackFinding | None:
 
     return StackFinding(
         number=number,
+        title=title,
         date=finding_date,
         author=author,
         votes=votes,

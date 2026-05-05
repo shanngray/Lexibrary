@@ -6,3 +6,15 @@ comments:
     \ opener and ``` closer inside the outer fence. The parser strips both so DesignFile.interface_contract\
     \ never carries fence artifacts."
   date: '2026-04-21T07:11:06.794835Z'
+- body: 'Added parse_design_file_frontmatter_strict: the strict counterpart to parse_design_file_frontmatter.
+    Raises DesignFileValidationError (the existing exception class, shared with parse_design_file_strict)
+    when a frontmatter block is found but fails YAML parsing or Pydantic validation.
+    Returns None only for benign non-parse conditions (file absent, OSError, no frontmatter
+    block). The lenient parse_design_file_frontmatter now delegates to the strict
+    variant and catches DesignFileValidationError, preserving backward-compatible
+    None-on-error behavior for the ~14 bulk callers (indexer, curator, archivist,
+    lifecycle, validator checks) that loop over all design files and need None as
+    a skip-sentinel. No bulk callers were migrated to strict because all use None-on-error
+    as a loop-continue sentinel; the strict variant is available for future single-file
+    user-facing paths.'
+  date: '2026-04-27T18:06:25.631209Z'

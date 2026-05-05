@@ -1,0 +1,5 @@
+comments:
+- body: 'Registered parseable_artifacts in AVAILABLE_CHECKS at error severity. Severity
+    choice is deliberate: an unparseable artifact is broken data, not a warning, so
+    severity-filtered runs at error level still catch it.'
+  date: '2026-04-28T02:26:58.966008Z'

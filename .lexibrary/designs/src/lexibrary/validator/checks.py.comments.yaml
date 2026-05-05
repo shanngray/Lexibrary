@@ -13,3 +13,12 @@ comments:
     instead of silently crashing in downstream commands. Closes ST-043 gap identified
     during multi-root end-to-end verification.
   date: '2026-04-17T20:26:51.001835Z'
+- body: 'Added check_parseable_artifacts: an error-severity check that walks each
+    artifact directory under .lexibrary/ and dispatches every *.md file to its kind''s
+    strict parser variant. Catches *ValidationError and threads the parser''s full
+    self-describing detail (field, bad value, accepted set) into the finding''s message
+    verbatim. Defensive Exception branch ensures one corrupt file can''t crash the
+    whole check. Strict parsers are looked up via getattr on the module so monkeypatching
+    at the validator-checks boundary works for tests. Closes the gap where lenient
+    parsers silently dropped malformed artifacts from the index.'
+  date: '2026-04-28T02:26:54.255874Z'

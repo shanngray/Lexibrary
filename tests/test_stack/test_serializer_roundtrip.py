@@ -372,3 +372,101 @@ class TestStaleAtRoundTrip:
         assert parsed_unstaled is not None
         assert parsed_unstaled.frontmatter.status == "resolved"
         assert parsed_unstaled.frontmatter.stale_at is None
+
+
+# ---------------------------------------------------------------------------
+# Bug-fix round-trip tests: finding title survives serialize -> parse
+# ---------------------------------------------------------------------------
+
+
+class TestFindingTitleRoundTrip:
+    """Finding title survives serialize -> parse round-trips."""
+
+    def test_roundtrip_titled_finding(self, tmp_path: Path) -> None:
+        """A finding with a title round-trips with the title preserved."""
+        original = StackPost(
+            frontmatter=_make_frontmatter(id="ST-050", title="Titled findings test"),
+            problem="Testing titled findings in round-trip.",
+            findings=[
+                StackFinding(
+                    number=1,
+                    title="R-code coverage gap",
+                    date=date(2026, 4, 1),
+                    author="agent-200",
+                    votes=1,
+                    accepted=True,
+                    body="The coverage gap was identified here.",
+                ),
+                StackFinding(
+                    number=2,
+                    title="Another finding title",
+                    date=date(2026, 4, 2),
+                    author="agent-300",
+                    votes=0,
+                    accepted=False,
+                    body="Second finding body.",
+                ),
+            ],
+        )
+        parsed = _roundtrip(original, tmp_path)
+
+        assert len(parsed.findings) == 2
+        assert parsed.findings[0].title == "R-code coverage gap"
+        assert parsed.findings[0].body == "The coverage gap was identified here."
+        assert parsed.findings[1].title == "Another finding title"
+        assert parsed.findings[1].body == "Second finding body."
+
+    def test_roundtrip_untitled_finding(self, tmp_path: Path) -> None:
+        """A finding with no title round-trips with empty title."""
+        original = StackPost(
+            frontmatter=_make_frontmatter(id="ST-051", title="Untitled findings test"),
+            problem="Testing untitled findings in round-trip.",
+            findings=[
+                StackFinding(
+                    number=1,
+                    title="",
+                    date=date(2026, 4, 1),
+                    author="agent-200",
+                    votes=2,
+                    accepted=False,
+                    body="Plain finding without a title.",
+                ),
+            ],
+        )
+        parsed = _roundtrip(original, tmp_path)
+
+        assert len(parsed.findings) == 1
+        assert parsed.findings[0].title == ""
+        assert parsed.findings[0].body == "Plain finding without a title."
+
+    def test_roundtrip_mixed_titled_and_untitled(self, tmp_path: Path) -> None:
+        """Mix of titled and untitled findings all round-trip correctly."""
+        original = StackPost(
+            frontmatter=_make_frontmatter(id="ST-053", title="Mixed findings test"),
+            problem="Testing mixed titled/untitled findings.",
+            findings=[
+                StackFinding(
+                    number=1,
+                    title="Named finding",
+                    date=date(2026, 4, 1),
+                    author="agent-200",
+                    votes=1,
+                    accepted=True,
+                    body="This one has a title.",
+                ),
+                StackFinding(
+                    number=2,
+                    title="",
+                    date=date(2026, 4, 2),
+                    author="agent-300",
+                    votes=0,
+                    accepted=False,
+                    body="This one has no title.",
+                ),
+            ],
+        )
+        parsed = _roundtrip(original, tmp_path)
+
+        assert len(parsed.findings) == 2
+        assert parsed.findings[0].title == "Named finding"
+        assert parsed.findings[1].title == ""

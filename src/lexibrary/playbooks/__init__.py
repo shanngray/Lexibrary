@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 from lexibrary.playbooks.index import PlaybookIndex
-from lexibrary.playbooks.parser import parse_playbook_file
+from lexibrary.playbooks.parser import (
+    PlaybookValidationError,
+    parse_playbook_file,
+    parse_playbook_file_strict,
+)
 from lexibrary.playbooks.serializer import serialize_playbook_file
 from lexibrary.playbooks.template import render_playbook_template
 
 __all__ = [
     "PlaybookIndex",
+    "PlaybookValidationError",
     "parse_playbook_file",
+    "parse_playbook_file_strict",
     "render_playbook_template",
     "serialize_playbook_file",
 ]

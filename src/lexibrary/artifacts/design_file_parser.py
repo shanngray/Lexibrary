@@ -47,6 +47,20 @@ _DATA_FLOW_BULLET_RE = re.compile(
 _REEXPORTS_BULLET_RE = re.compile(r"^-\s+From\s+`(?P<source>[^`]+)`\s*:\s*(?P<names>.+)$")
 
 
+class DesignFileValidationError(Exception):
+    """Raised by :func:`parse_design_file_strict` when frontmatter fails validation.
+
+    Carries the human-readable *detail* string extracted from the underlying
+    ``yaml.YAMLError`` or Pydantic ``ValidationError`` / ``KeyError`` so
+    callers can surface an actionable message without re-catching low-level
+    exceptions.
+    """
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
 def _split_csv(raw: str) -> list[str]:
     """Split a comma-separated list, trimming whitespace and trailing period."""
     stripped = raw.strip().rstrip(".")
@@ -241,10 +255,19 @@ def parse_design_file_metadata(path: Path) -> StalenessMetadata | None:
     return _find_footer_metadata(text)
 
 
-def parse_design_file_frontmatter(path: Path) -> DesignFileFrontmatter | None:
-    """Extract only the YAML frontmatter from a design file.
+def parse_design_file_frontmatter_strict(path: Path) -> DesignFileFrontmatter | None:
+    """Extract only the YAML frontmatter from a design file, raising on validation errors.
 
-    Returns None if file doesn't exist or frontmatter is absent/invalid.
+    Returns ``None`` only for benign non-parse conditions:
+
+    - The file does not exist.
+    - An :class:`OSError` prevented reading the file.
+    - The file contains no YAML frontmatter block.
+
+    Raises :class:`DesignFileValidationError` for any condition where a
+    frontmatter block *was* found but its content is malformed or fails
+    Pydantic validation.  The exception message names the field(s), the bad
+    value(s), and the allowed values so the agent can self-correct.
     """
     if not path.exists():
         return None
@@ -255,10 +278,19 @@ def parse_design_file_frontmatter(path: Path) -> DesignFileFrontmatter | None:
     match = _FRONTMATTER_RE.match(text)
     if not match:
         return None
+
+    # Frontmatter block found — any error from here is a user-fixable problem.
     try:
         data = yaml.safe_load(match.group(1))
-        if not isinstance(data, dict):
-            return None
+    except yaml.YAMLError as exc:
+        raise DesignFileValidationError(f"YAML syntax error in frontmatter: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise DesignFileValidationError(
+            f"Frontmatter must be a YAML mapping, got {type(data).__name__}"
+        )
+
+    try:
         # Parse deprecated_at from ISO string if present
         deprecated_at_raw = data.get("deprecated_at")
         deprecated_at = None
@@ -275,7 +307,28 @@ def parse_design_file_frontmatter(path: Path) -> DesignFileFrontmatter | None:
             deprecated_at=deprecated_at,
             deprecated_reason=data.get("deprecated_reason"),
         )
-    except (yaml.YAMLError, KeyError, ValueError):
+    except KeyError as exc:
+        raise DesignFileValidationError(
+            f"Frontmatter validation failed:\n  missing required field {str(exc)}"
+        ) from exc
+    except (TypeError, ValueError) as exc:
+        detail = _format_validation_error(exc)
+        raise DesignFileValidationError(detail) from exc
+
+
+def parse_design_file_frontmatter(path: Path) -> DesignFileFrontmatter | None:
+    """Extract only the YAML frontmatter from a design file.
+
+    Returns None if file doesn't exist or frontmatter is absent/invalid.
+    Delegates to :func:`parse_design_file_frontmatter_strict` and catches
+    :class:`DesignFileValidationError` for backward compatibility with bulk
+    callers where ``None`` is the correct sentinel for an unreadable file.
+    Callers that need actionable error detail (user-facing paths) should call
+    :func:`parse_design_file_frontmatter_strict` directly.
+    """
+    try:
+        return parse_design_file_frontmatter_strict(path)
+    except DesignFileValidationError:
         return None
 
 
@@ -283,7 +336,36 @@ def parse_design_file(path: Path) -> DesignFile | None:
     """Parse a full design file into a DesignFile model.
 
     Returns None if file doesn't exist or content is malformed (missing
-    frontmatter, H1 heading, or metadata footer).
+    frontmatter, H1 heading, or metadata footer).  Callers that need a
+    structured error on frontmatter validation failure should use
+    :func:`parse_design_file_strict` instead.
+    """
+    try:
+        return parse_design_file_strict(path)
+    except DesignFileValidationError:
+        return None
+
+
+def parse_design_file_strict(path: Path) -> DesignFile | None:
+    """Parse a full design file, raising on frontmatter validation or YAML errors.
+
+    Returns ``None`` only for benign non-parse conditions:
+
+    - The file does not exist.
+    - An :class:`OSError` prevented reading the file.
+    - The file contains no YAML frontmatter block.
+    - The file lacks a required H1 heading (source path).
+    - The metadata footer (``<!-- lexibrary:meta ... -->``) is absent or corrupt.
+
+    Raises :class:`DesignFileValidationError` for any condition where a
+    frontmatter block *was* found but its content is malformed or fails
+    Pydantic validation.  The exception message names the field(s),
+    the bad value(s), and the allowed values so the user can fix the file.
+
+    Note: footer absence/corruption returns ``None`` rather than raising, because
+    that reflects a body-level structural issue rather than a frontmatter
+    validation problem.  This matches the lenient behaviour described in the
+    out-of-scope notes for body-section parse failures.
     """
     if not path.exists():
         return None
@@ -296,10 +378,19 @@ def parse_design_file(path: Path) -> DesignFile | None:
     fm_match = _FRONTMATTER_RE.match(text)
     if not fm_match:
         return None
+
+    # Frontmatter block found — any error from here is a user-fixable problem.
     try:
         fm_data = yaml.safe_load(fm_match.group(1))
-        if not isinstance(fm_data, dict):
-            return None
+    except yaml.YAMLError as exc:
+        raise DesignFileValidationError(f"YAML syntax error in frontmatter: {exc}") from exc
+
+    if not isinstance(fm_data, dict):
+        raise DesignFileValidationError(
+            f"Frontmatter must be a YAML mapping, got {type(fm_data).__name__}"
+        )
+
+    try:
         # Parse deprecated_at from ISO string if present
         deprecated_at_raw = fm_data.get("deprecated_at")
         deprecated_at = None
@@ -316,8 +407,13 @@ def parse_design_file(path: Path) -> DesignFile | None:
             deprecated_at=deprecated_at,
             deprecated_reason=fm_data.get("deprecated_reason"),
         )
-    except (yaml.YAMLError, KeyError, ValueError):
-        return None
+    except KeyError as exc:
+        raise DesignFileValidationError(
+            f"Frontmatter validation failed:\n  missing required field {str(exc)}"
+        ) from exc
+    except (TypeError, ValueError) as exc:
+        detail = _format_validation_error(exc)
+        raise DesignFileValidationError(detail) from exc
 
     # Strip frontmatter block from text for further parsing
     body_text = text[fm_match.end() :]
@@ -444,6 +540,8 @@ def parse_design_file(path: Path) -> DesignFile | None:
                     preserved_sections[sec_name] = content_text
 
     # --- Metadata footer (§1.3 SHARED_BLOCK_B: inline OR legacy multi-line) ---
+    # Footer absence is treated as a body-level structural issue, not a
+    # frontmatter validation error, so it returns None rather than raising.
     metadata = _find_footer_metadata(text)
     if metadata is None:
         return None
@@ -474,3 +572,28 @@ def parse_design_file(path: Path) -> DesignFile | None:
         reexports=reexports,
         metadata=metadata,
     )
+
+
+def _format_validation_error(exc: Exception) -> str:
+    """Extract a human-readable detail string from a Pydantic ValidationError.
+
+    Falls back to ``str(exc)`` when the exception is not a Pydantic
+    ``ValidationError`` or when the errors list is empty.
+    """
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    if not isinstance(exc, ValidationError):
+        return str(exc)
+
+    errors = exc.errors()
+    if not errors:
+        return str(exc)
+
+    parts: list[str] = []
+    for err in errors:
+        loc = " -> ".join(str(part) for part in err.get("loc", ()))
+        msg = err.get("msg", "")
+        inp = err.get("input", "<unknown>")
+        parts.append(f"  field {loc!r}: {msg} (got {inp!r})")
+
+    return "Frontmatter validation failed:\n" + "\n".join(parts)

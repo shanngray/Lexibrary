@@ -377,9 +377,7 @@ def test_missing_default_sections_partial(tmp_path: Path) -> None:
     base = tmp_path / ".lexibrary"
     base.mkdir()
     (base / "config.yaml").write_text(
-        "scope_roots:\n  - path: .\n"
-        "iwh:\n  enabled: true\n"
-        "llm:\n  provider: anthropic\n"
+        "scope_roots:\n  - path: .\niwh:\n  enabled: true\nllm:\n  provider: anthropic\n"
     )
 
     missing = set(missing_default_sections(base / "config.yaml"))
@@ -399,9 +397,7 @@ def test_full_default_sections_writes_all_missing(tmp_path: Path) -> None:
     base = tmp_path / ".lexibrary"
     base.mkdir()
     (base / "config.yaml").write_text(
-        "scope_roots:\n  - path: .\n"
-        "project_name: minimal\n"
-        "lexibrary_version: '0.1.0'\n"
+        "scope_roots:\n  - path: .\nproject_name: minimal\nlexibrary_version: '0.1.0'\n"
     )
 
     config = LexibraryConfig.model_validate(
@@ -426,9 +422,7 @@ def test_full_default_sections_values_match_pydantic_defaults(tmp_path: Path) ->
     base = tmp_path / ".lexibrary"
     base.mkdir()
     (base / "config.yaml").write_text(
-        "scope_roots:\n  - path: .\n"
-        "project_name: minimal\n"
-        "lexibrary_version: '0.1.0'\n"
+        "scope_roots:\n  - path: .\nproject_name: minimal\nlexibrary_version: '0.1.0'\n"
     )
 
     config = LexibraryConfig.model_validate(

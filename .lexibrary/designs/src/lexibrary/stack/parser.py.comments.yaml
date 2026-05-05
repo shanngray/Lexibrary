@@ -1,0 +1,14 @@
+comments:
+- body: "Introduced two behavioural changes. (1) parse_stack_post_strict: a new public\
+    \ function that raises StackPostValidationError (with actionable field/value/allowed-values\
+    \ detail) for any frontmatter that is found but fails YAML parsing or Pydantic\
+    \ validation, while still returning None for missing file or absent frontmatter.\
+    \ parse_stack_post delegates to parse_stack_post_strict and converts StackPostValidationError\
+    \ to None for bulk callers that expect the lenient contract. (2) _FINDING_HEADER_RE\
+    \ loosened from '^###\\s+F(\\d+)\\s*$' to '^###\\s+F(\\d+)(?:\\s*[\u2014\\-:]\\\
+    s*(.+?))?\\s*$' so headers like '### F1 \u2014 R-code coverage gap' and '### F1:\
+    \ Root cause' parse correctly; the captured title text is passed to _parse_single_finding\
+    \ and stored on StackFinding.title (new field, default ''). _extract_findings\
+    \ updated to pass title through. _format_validation_error is a private helper\
+    \ that converts a Pydantic ValidationError to a terse, field-level error string."
+  date: '2026-04-26T21:40:15.017629Z'

@@ -1,0 +1,9 @@
+comments:
+- body: Added parse_concept_file_strict and ConceptValidationError following the stack-parser
+    pattern. The strict variant raises on YAML errors and Pydantic validation failures
+    (frontmatter block found but invalid), returning None only for file-not-found,
+    OSError, and no-frontmatter cases. The lenient parse_concept_file delegates to
+    strict and catches ConceptValidationError, preserving backward compat for bulk
+    callers (index scanning, search). This pattern ensures lexi view can surface field/value/allowed-values
+    in error hints.
+  date: '2026-04-26T23:08:27.104610Z'

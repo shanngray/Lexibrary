@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from lexibrary.playbooks.parser import (
     _FRONTMATTER_RE,
+    PlaybookValidationError,
     extract_overview,
     parse_playbook_file,
+    parse_playbook_file_strict,
 )
 
 # -- extract_overview --------------------------------------------------------
@@ -165,3 +169,111 @@ class TestParsePlaybookFile:
         assert result.frontmatter.status == "draft"
         assert result.frontmatter.source == "user"
         assert result.frontmatter.estimated_minutes is None
+
+
+# ---------------------------------------------------------------------------
+# Strict parser tests
+# ---------------------------------------------------------------------------
+
+_PB_INVALID_STATUS = """\
+---
+title: Bad Status Playbook
+id: PB-099
+status: unknown_status
+---
+Overview text here.
+"""
+
+_PB_INVALID_SOURCE = """\
+---
+title: Bad Source Playbook
+id: PB-098
+source: llm
+---
+Overview text here.
+"""
+
+_PB_MISSING_TITLE = """\
+---
+id: PB-097
+status: active
+---
+Overview text here.
+"""
+
+_PB_NO_FRONTMATTER = """\
+# Just a heading
+
+No frontmatter here.
+"""
+
+_PB_VALID = """\
+---
+title: Valid Playbook
+id: PB-001
+status: active
+source: user
+---
+Overview of the playbook.
+"""
+
+
+class TestStrictParserValidationErrors:
+    """parse_playbook_file_strict raises PlaybookValidationError for bad frontmatter."""
+
+    def test_invalid_status_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "PB-099-bad-status.md"
+        p.write_text(_PB_INVALID_STATUS)
+        with pytest.raises(PlaybookValidationError) as exc_info:
+            parse_playbook_file_strict(p)
+        detail = exc_info.value.detail
+        assert "status" in detail
+        assert "unknown_status" in detail
+
+    def test_invalid_status_lenient_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "PB-099-bad-status.md"
+        p.write_text(_PB_INVALID_STATUS)
+        result = parse_playbook_file(p)
+        assert result is None
+
+    def test_invalid_source_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "PB-098-bad-source.md"
+        p.write_text(_PB_INVALID_SOURCE)
+        with pytest.raises(PlaybookValidationError) as exc_info:
+            parse_playbook_file_strict(p)
+        detail = exc_info.value.detail
+        assert "source" in detail
+        assert "llm" in detail
+
+    def test_missing_required_field_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "PB-097-missing-title.md"
+        p.write_text(_PB_MISSING_TITLE)
+        with pytest.raises(PlaybookValidationError) as exc_info:
+            parse_playbook_file_strict(p)
+        detail = exc_info.value.detail
+        assert "title" in detail
+
+    def test_missing_required_field_lenient_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "PB-097-missing-title.md"
+        p.write_text(_PB_MISSING_TITLE)
+        result = parse_playbook_file(p)
+        assert result is None
+
+    def test_nonexistent_file_returns_none_strict(self, tmp_path: Path) -> None:
+        p = tmp_path / "does-not-exist.md"
+        result = parse_playbook_file_strict(p)
+        assert result is None
+
+    def test_no_frontmatter_returns_none_strict(self, tmp_path: Path) -> None:
+        p = tmp_path / "no-fm.md"
+        p.write_text(_PB_NO_FRONTMATTER)
+        result = parse_playbook_file_strict(p)
+        assert result is None
+
+    def test_valid_playbook_parses_strict(self, tmp_path: Path) -> None:
+        p = tmp_path / "PB-001-valid.md"
+        p.write_text(_PB_VALID)
+        result = parse_playbook_file_strict(p)
+        assert result is not None
+        assert result.frontmatter.id == "PB-001"
+        assert result.frontmatter.title == "Valid Playbook"

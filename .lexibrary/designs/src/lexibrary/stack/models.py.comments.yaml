@@ -1,0 +1,7 @@
+comments:
+- body: "Added title: str = '' field to StackFinding. This is the optional title text\
+    \ extracted from a finding header such as '### F1 \u2014 R-code coverage gap'.\
+    \ Defaults to empty string for backward compatibility with untitled findings.\
+    \ The serializer emits the em-dash form '### F{n} \u2014 {title}' when title is\
+    \ non-empty, and the bare '### F{n}' form when empty."
+  date: '2026-04-26T21:40:23.205689Z'

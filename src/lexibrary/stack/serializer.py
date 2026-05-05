@@ -55,7 +55,10 @@ def serialize_stack_post(post: StackPost) -> str:
     if post.findings:
         parts.append("## Findings\n\n")
         for finding in post.findings:
-            parts.append(f"### F{finding.number}\n\n")
+            if finding.title:
+                parts.append(f"### F{finding.number} — {finding.title}\n\n")
+            else:
+                parts.append(f"### F{finding.number}\n\n")
 
             # Metadata line
             meta = (

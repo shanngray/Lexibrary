@@ -94,15 +94,6 @@ class ArtifactParseError(ViewError):
 # Service function
 # ---------------------------------------------------------------------------
 
-# Maps artifact kind -> (module_path, function_name) for lazy imports.
-_PARSER_DISPATCH: dict[str, tuple[str, str]] = {
-    "concept": ("lexibrary.wiki.parser", "parse_concept_file"),
-    "convention": ("lexibrary.conventions.parser", "parse_convention_file"),
-    "playbook": ("lexibrary.playbooks.parser", "parse_playbook_file"),
-    "design": ("lexibrary.artifacts.design_file_parser", "parse_design_file"),
-    "stack": ("lexibrary.stack.parser", "parse_stack_post"),
-}
-
 
 def resolve_and_load(project_root: Path, artifact_id: str) -> ViewResult:
     """Resolve *artifact_id* to its file and return the parsed content.
@@ -162,7 +153,17 @@ def resolve_and_load(project_root: Path, artifact_id: str) -> ViewResult:
         )
 
     # 4. Parse via lazy dispatch
-    content = _load_artifact(kind, file_path)
+    try:
+        content = _load_artifact(kind, file_path)
+    except ArtifactParseError as exc:
+        # Re-raise with the correct artifact_id (the parser sets it to "" to
+        # avoid a circular dependency on the resolved ID).
+        raise ArtifactParseError(
+            f"Failed to parse artifact: {artifact_id}",
+            artifact_id=artifact_id,
+            hint=exc.hint,
+        ) from exc
+
     if content is None:
         raise ArtifactParseError(
             f"Failed to parse artifact: {artifact_id}",
@@ -179,17 +180,88 @@ def resolve_and_load(project_root: Path, artifact_id: str) -> ViewResult:
 
 
 def _load_artifact(kind: str, file_path: Path) -> ArtifactContent | None:
-    """Dispatch to the correct parser for *kind* and return the parsed model.
+    """Dispatch to the correct strict parser for *kind* and return the parsed model.
 
     Uses lazy imports to avoid loading all parsers at module level.
+
+    For all artifact kinds, calls the ``parse_*_strict`` variant so that
+    validation errors (Pydantic validation failures, YAML syntax errors)
+    surface as an :class:`ArtifactParseError` with an actionable hint rather
+    than being silently swallowed.
     """
-    import importlib  # noqa: PLC0415
+    if kind == "stack":
+        from lexibrary.stack.parser import (  # noqa: PLC0415
+            StackPostValidationError,
+            parse_stack_post_strict,
+        )
 
-    dispatch = _PARSER_DISPATCH.get(kind)
-    if dispatch is None:
-        return None
+        try:
+            return parse_stack_post_strict(file_path)
+        except StackPostValidationError as exc:
+            raise ArtifactParseError(
+                f"Failed to parse artifact: {file_path.name}",
+                artifact_id="",
+                hint=exc.detail,
+            ) from exc
 
-    module_path, func_name = dispatch
-    module = importlib.import_module(module_path)
-    parser_fn = getattr(module, func_name)
-    return parser_fn(file_path)  # type: ignore[no-any-return]
+    if kind == "concept":
+        from lexibrary.wiki.parser import (  # noqa: PLC0415
+            ConceptValidationError,
+            parse_concept_file_strict,
+        )
+
+        try:
+            return parse_concept_file_strict(file_path)
+        except ConceptValidationError as exc:
+            raise ArtifactParseError(
+                f"Failed to parse artifact: {file_path.name}",
+                artifact_id="",
+                hint=exc.detail,
+            ) from exc
+
+    if kind == "convention":
+        from lexibrary.conventions.parser import (  # noqa: PLC0415
+            ConventionValidationError,
+            parse_convention_file_strict,
+        )
+
+        try:
+            return parse_convention_file_strict(file_path)
+        except ConventionValidationError as exc:
+            raise ArtifactParseError(
+                f"Failed to parse artifact: {file_path.name}",
+                artifact_id="",
+                hint=exc.detail,
+            ) from exc
+
+    if kind == "playbook":
+        from lexibrary.playbooks.parser import (  # noqa: PLC0415
+            PlaybookValidationError,
+            parse_playbook_file_strict,
+        )
+
+        try:
+            return parse_playbook_file_strict(file_path)
+        except PlaybookValidationError as exc:
+            raise ArtifactParseError(
+                f"Failed to parse artifact: {file_path.name}",
+                artifact_id="",
+                hint=exc.detail,
+            ) from exc
+
+    if kind == "design":
+        from lexibrary.artifacts.design_file_parser import (  # noqa: PLC0415
+            DesignFileValidationError,
+            parse_design_file_strict,
+        )
+
+        try:
+            return parse_design_file_strict(file_path)
+        except DesignFileValidationError as exc:
+            raise ArtifactParseError(
+                f"Failed to parse artifact: {file_path.name}",
+                artifact_id="",
+                hint=exc.detail,
+            ) from exc
+
+    return None

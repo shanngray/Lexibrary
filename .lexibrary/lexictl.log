@@ -1,0 +1,4 @@
+Usage: lexictl update [OPTIONS] [PATH]
+Try 'lexictl update --help' for help.
+
+Error: Got unexpected extra arguments (.lexibrary/config.yaml.bak src/lexibrary/validator/checks.py tests/test_validator/test_body_structure_checks.py)

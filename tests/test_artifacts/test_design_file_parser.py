@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from lexibrary.artifacts.design_file_parser import (
+    DesignFileValidationError,
     parse_design_file,
     parse_design_file_frontmatter,
+    parse_design_file_frontmatter_strict,
     parse_design_file_metadata,
+    parse_design_file_strict,
 )
 
 _FULL_DESIGN_FILE = """\
@@ -971,3 +976,251 @@ generator: lexibrary-v2
         df = parse_design_file(f)
         assert df is not None
         assert "Data flows" not in df.preserved_sections
+
+
+# ---------------------------------------------------------------------------
+# Strict parser tests
+# ---------------------------------------------------------------------------
+
+_DS_INVALID_STATUS = """\
+---
+description: Bad status design file.
+id: DS-099
+status: invalid_status
+---
+
+# src/bad.py
+
+## Interface Contract
+
+```python
+pass
+```
+
+## Dependencies
+
+(none)
+
+## Dependents
+
+(none)
+
+<!-- lexibrary:meta
+source: src/bad.py
+source_hash: abc123
+design_hash: def456
+generated: 2026-01-01T12:00:00
+generator: lexibrary-v2
+-->
+"""
+
+_DS_MISSING_DESCRIPTION = """\
+---
+id: DS-098
+---
+
+# src/nodesc.py
+
+## Interface Contract
+
+```python
+pass
+```
+
+## Dependencies
+
+(none)
+
+## Dependents
+
+(none)
+
+<!-- lexibrary:meta
+source: src/nodesc.py
+source_hash: abc123
+design_hash: def456
+generated: 2026-01-01T12:00:00
+generator: lexibrary-v2
+-->
+"""
+
+_DS_NO_FRONTMATTER = """\
+# src/nofm.py
+
+## Interface Contract
+
+```python
+pass
+```
+
+<!-- lexibrary:meta
+source: src/nofm.py
+source_hash: abc123
+design_hash: def456
+generated: 2026-01-01T12:00:00
+generator: lexibrary-v2
+-->
+"""
+
+
+class TestStrictParserValidationErrors:
+    """parse_design_file_strict raises DesignFileValidationError for bad frontmatter."""
+
+    def test_invalid_status_raises(self, tmp_path: Path) -> None:
+        f = tmp_path / "bad-status.md"
+        f.write_text(_DS_INVALID_STATUS)
+        with pytest.raises(DesignFileValidationError) as exc_info:
+            parse_design_file_strict(f)
+        detail = exc_info.value.detail
+        assert "status" in detail
+        assert "invalid_status" in detail
+
+    def test_invalid_status_lenient_returns_none(self, tmp_path: Path) -> None:
+        f = tmp_path / "bad-status.md"
+        f.write_text(_DS_INVALID_STATUS)
+        result = parse_design_file(f)
+        assert result is None
+
+    def test_missing_required_field_raises(self, tmp_path: Path) -> None:
+        f = tmp_path / "missing-desc.md"
+        f.write_text(_DS_MISSING_DESCRIPTION)
+        with pytest.raises(DesignFileValidationError) as exc_info:
+            parse_design_file_strict(f)
+        detail = exc_info.value.detail
+        assert "description" in detail
+
+    def test_missing_required_field_lenient_returns_none(self, tmp_path: Path) -> None:
+        f = tmp_path / "missing-desc.md"
+        f.write_text(_DS_MISSING_DESCRIPTION)
+        result = parse_design_file(f)
+        assert result is None
+
+    def test_nonexistent_file_returns_none_strict(self, tmp_path: Path) -> None:
+        result = parse_design_file_strict(tmp_path / "does-not-exist.md")
+        assert result is None
+
+    def test_no_frontmatter_returns_none_strict(self, tmp_path: Path) -> None:
+        f = tmp_path / "no-fm.md"
+        f.write_text(_DS_NO_FRONTMATTER)
+        result = parse_design_file_strict(f)
+        assert result is None
+
+    def test_no_footer_returns_none_strict(self, tmp_path: Path) -> None:
+        """Footer absence returns None (body-level issue, not a frontmatter error)."""
+        f = tmp_path / "no-footer.md"
+        f.write_text(_NO_FOOTER)
+        result = parse_design_file_strict(f)
+        assert result is None
+
+    def test_valid_design_parses_strict(self, tmp_path: Path) -> None:
+        f = tmp_path / "valid.md"
+        f.write_text(_FULL_DESIGN_FILE)
+        result = parse_design_file_strict(f)
+        assert result is not None
+        assert result.frontmatter.id == "DS-011"
+
+
+# ---------------------------------------------------------------------------
+# Strict frontmatter-only parser tests
+# ---------------------------------------------------------------------------
+
+# Frontmatter with an invalid Literal for `status` (no full body needed)
+_FM_INVALID_STATUS = """\
+---
+description: Bad status field.
+id: DS-200
+status: bogus
+---
+
+# src/bad-status.py
+"""
+
+# Frontmatter missing the required `description` field
+_FM_MISSING_DESCRIPTION = """\
+---
+id: DS-201
+---
+
+# src/no-description.py
+"""
+
+# File with no frontmatter block at all
+_FM_NO_FRONTMATTER = "# src/nofm.py\n\nNo frontmatter here.\n"
+
+
+class TestStrictFrontmatterParser:
+    """parse_design_file_frontmatter_strict raises DesignFileValidationError for bad frontmatter."""
+
+    def test_invalid_literal_raises(self, tmp_path: Path) -> None:
+        """Invalid Literal field raises DesignFileValidationError naming field and bad value."""
+        f = tmp_path / "bad-status.md"
+        f.write_text(_FM_INVALID_STATUS)
+        with pytest.raises(DesignFileValidationError) as exc_info:
+            parse_design_file_frontmatter_strict(f)
+        detail = exc_info.value.detail
+        assert "status" in detail
+        assert "bogus" in detail
+
+    def test_invalid_literal_error_includes_allowed_values(self, tmp_path: Path) -> None:
+        """Error message for an invalid Literal field includes the allowed values from Pydantic."""
+        f = tmp_path / "bad-status.md"
+        f.write_text(_FM_INVALID_STATUS)
+        with pytest.raises(DesignFileValidationError) as exc_info:
+            parse_design_file_frontmatter_strict(f)
+        detail = exc_info.value.detail
+        # Pydantic surfaces allowed values — the message must include at least one valid option
+        # so that the agent can self-correct without consulting the schema.
+        assert "active" in detail or "deprecated" in detail or "unlinked" in detail
+
+    def test_missing_required_field_raises(self, tmp_path: Path) -> None:
+        """Missing required field raises DesignFileValidationError mentioning the field name."""
+        f = tmp_path / "no-description.md"
+        f.write_text(_FM_MISSING_DESCRIPTION)
+        with pytest.raises(DesignFileValidationError) as exc_info:
+            parse_design_file_frontmatter_strict(f)
+        detail = exc_info.value.detail
+        assert "description" in detail
+
+    def test_missing_required_field_message_shape(self, tmp_path: Path) -> None:
+        """Error message for a missing required field contains 'missing required field'."""
+        f = tmp_path / "no-description.md"
+        f.write_text(_FM_MISSING_DESCRIPTION)
+        with pytest.raises(DesignFileValidationError) as exc_info:
+            parse_design_file_frontmatter_strict(f)
+        assert "missing required field" in exc_info.value.detail
+
+    def test_lenient_returns_none_for_invalid_literal(self, tmp_path: Path) -> None:
+        """Lenient parse_design_file_frontmatter returns None for invalid Literal field."""
+        f = tmp_path / "bad-status.md"
+        f.write_text(_FM_INVALID_STATUS)
+        result = parse_design_file_frontmatter(f)
+        assert result is None
+
+    def test_lenient_returns_none_for_missing_required_field(self, tmp_path: Path) -> None:
+        """Lenient parse_design_file_frontmatter returns None when required field is absent."""
+        f = tmp_path / "no-description.md"
+        f.write_text(_FM_MISSING_DESCRIPTION)
+        result = parse_design_file_frontmatter(f)
+        assert result is None
+
+    def test_nonexistent_file_returns_none(self, tmp_path: Path) -> None:
+        """File not found returns None (not a user-fixable frontmatter error)."""
+        result = parse_design_file_frontmatter_strict(tmp_path / "does-not-exist.md")
+        assert result is None
+
+    def test_no_frontmatter_returns_none(self, tmp_path: Path) -> None:
+        """No frontmatter block returns None (consistent with five sibling strict parsers)."""
+        f = tmp_path / "no-fm.md"
+        f.write_text(_FM_NO_FRONTMATTER)
+        result = parse_design_file_frontmatter_strict(f)
+        assert result is None
+
+    def test_valid_frontmatter_parses_correctly(self, tmp_path: Path) -> None:
+        """Valid frontmatter is parsed and returned as DesignFileFrontmatter."""
+        f = tmp_path / "valid.md"
+        f.write_text(_FULL_DESIGN_FILE)
+        result = parse_design_file_frontmatter_strict(f)
+        assert result is not None
+        assert result.id == "DS-011"
+        assert result.description == "CLI entry point for the lexi command."
+        assert result.status == "active"

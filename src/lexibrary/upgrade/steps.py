@@ -429,9 +429,7 @@ def apply_git_hooks(project_root: Path, config: LexibraryConfig) -> StepResult:
     )
 
 
-def apply_full_default_sections(
-    project_root: Path, config: LexibraryConfig
-) -> StepResult:
+def apply_full_default_sections(project_root: Path, config: LexibraryConfig) -> StepResult:
     """Materialise every default config section into ``.lexibrary/config.yaml``.
 
     Opt-in step (``requires_flag="all"``). For every BaseModel-typed
@@ -535,8 +533,7 @@ UPGRADE_STEPS: list[UpgradeStep] = [
     UpgradeStep(
         name="full-default-sections",
         description=(
-            "Materialise every default config section into config.yaml "
-            "(opt-in via --all)."
+            "Materialise every default config section into config.yaml (opt-in via --all)."
         ),
         apply=apply_full_default_sections,
         requires_flag="all",

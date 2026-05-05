@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from lexibrary.conventions.parser import parse_convention_file
+import pytest
+
+from lexibrary.conventions.parser import (
+    ConventionValidationError,
+    parse_convention_file,
+    parse_convention_file_strict,
+)
 
 VALID_CONVENTION = """\
 ---
@@ -254,3 +260,100 @@ class TestParseConventionFileDeprecatedAt:
         result = parse_convention_file(path)
         assert result is not None
         assert result.frontmatter.deprecated_at is None
+
+
+# ---------------------------------------------------------------------------
+# Strict parser tests
+# ---------------------------------------------------------------------------
+
+_CV_INVALID_STATUS = """\
+---
+title: Bad Status Convention
+id: CV-099
+status: archived
+---
+This is the rule.
+"""
+
+_CV_INVALID_SOURCE = """\
+---
+title: Bad Source Convention
+id: CV-098
+source: llm
+---
+This is the rule.
+"""
+
+_CV_MISSING_TITLE = """\
+---
+id: CV-097
+scope: project
+---
+This is the rule.
+"""
+
+_CV_NO_FRONTMATTER = """\
+# Just a heading
+
+No frontmatter here.
+"""
+
+
+class TestStrictParserValidationErrors:
+    """parse_convention_file_strict raises ConventionValidationError for bad frontmatter."""
+
+    def test_invalid_status_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "CV-099-bad-status.md"
+        p.write_text(_CV_INVALID_STATUS)
+        with pytest.raises(ConventionValidationError) as exc_info:
+            parse_convention_file_strict(p)
+        detail = exc_info.value.detail
+        assert "status" in detail
+        assert "archived" in detail
+
+    def test_invalid_status_lenient_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "CV-099-bad-status.md"
+        p.write_text(_CV_INVALID_STATUS)
+        result = parse_convention_file(p)
+        assert result is None
+
+    def test_invalid_source_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "CV-098-bad-source.md"
+        p.write_text(_CV_INVALID_SOURCE)
+        with pytest.raises(ConventionValidationError) as exc_info:
+            parse_convention_file_strict(p)
+        detail = exc_info.value.detail
+        assert "source" in detail
+        assert "llm" in detail
+
+    def test_missing_required_field_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "CV-097-missing-title.md"
+        p.write_text(_CV_MISSING_TITLE)
+        with pytest.raises(ConventionValidationError) as exc_info:
+            parse_convention_file_strict(p)
+        detail = exc_info.value.detail
+        assert "title" in detail
+
+    def test_missing_required_field_lenient_returns_none(self, tmp_path: Path) -> None:
+        p = tmp_path / "CV-097-missing-title.md"
+        p.write_text(_CV_MISSING_TITLE)
+        result = parse_convention_file(p)
+        assert result is None
+
+    def test_nonexistent_file_returns_none_strict(self, tmp_path: Path) -> None:
+        p = tmp_path / "does-not-exist.md"
+        result = parse_convention_file_strict(p)
+        assert result is None
+
+    def test_no_frontmatter_returns_none_strict(self, tmp_path: Path) -> None:
+        p = tmp_path / "no-fm.md"
+        p.write_text(_CV_NO_FRONTMATTER)
+        result = parse_convention_file_strict(p)
+        assert result is None
+
+    def test_valid_convention_parses_strict(self, tmp_path: Path) -> None:
+        p = tmp_path / "CV-003-future-annotations.md"
+        p.write_text(VALID_CONVENTION)
+        result = parse_convention_file_strict(p)
+        assert result is not None
+        assert result.frontmatter.id == "CV-003"

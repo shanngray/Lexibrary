@@ -22,7 +22,11 @@ from lexibrary.stack.mutations import (
     mark_unstale,
     record_vote,
 )
-from lexibrary.stack.parser import parse_stack_post
+from lexibrary.stack.parser import (
+    StackPostValidationError,
+    parse_stack_post,
+    parse_stack_post_strict,
+)
 from lexibrary.stack.serializer import serialize_stack_post
 from lexibrary.stack.template import render_post_template
 
@@ -42,7 +46,9 @@ __all__ = [
     "mark_outdated",
     "mark_stale",
     "mark_unstale",
+    "StackPostValidationError",
     "parse_stack_post",
+    "parse_stack_post_strict",
     "record_vote",
     "render_post_template",
     "serialize_stack_post",

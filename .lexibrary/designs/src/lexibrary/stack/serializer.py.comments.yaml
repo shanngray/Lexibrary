@@ -1,0 +1,5 @@
+comments:
+- body: "Finding serialization now emits '### F{n} \u2014 {title}' when StackFinding.title\
+    \ is non-empty, and bare '### F{n}' when title is empty. This round-trips correctly\
+    \ with the loosened _FINDING_HEADER_RE in parser.py."
+  date: '2026-04-26T21:40:30.795894Z'

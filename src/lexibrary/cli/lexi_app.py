@@ -449,7 +449,11 @@ def validate(
         str | None,
         typer.Option(
             "--severity",
-            help="Minimum severity to report: error, warning, or info.",
+            help=(
+                "Minimum severity to report: error, warning, or info. "
+                "Defaults to warning (info-level checks suppressed); "
+                "pass --severity info to include them."
+            ),
         ),
     ] = None,
     check: Annotated[
@@ -485,7 +489,7 @@ def validate(
         ),
     ] = False,
 ) -> None:
-    """Return consistency check results. Reports errors by default; use --severity for more."""
+    """Return consistency check results. Errors and warnings only; --severity info adds info."""
     from lexibrary.cli._format import OutputFormat, get_format  # noqa: PLC0415
 
     fmt = get_format()
@@ -495,6 +499,13 @@ def validate(
     if interactive and not fix:
         error("--interactive requires --fix")
         raise typer.Exit(1)
+
+    # Default: suppress info-level checks. An explicit --severity, --check,
+    # or --fix bypasses the gate — picking a single info check should still
+    # run it, and the fix flow needs every severity (escalation checks
+    # like ``convention_stale`` are info).
+    if severity is None and check is None and not fix:
+        severity = "warning"
 
     project_root = require_project_root()
 

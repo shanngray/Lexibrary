@@ -42,6 +42,7 @@ class StackFinding(BaseModel):
     """A single finding within a Stack post."""
 
     number: int
+    title: str = ""
     date: date
     author: str
     votes: int = 0

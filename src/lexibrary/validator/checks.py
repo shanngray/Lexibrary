@@ -7,7 +7,7 @@ Checks are grouped by severity:
 - Error-severity: wikilink_resolution, file_existence, concept_frontmatter,
     convention_frontmatter, design_frontmatter, stack_frontmatter,
     iwh_frontmatter, duplicate_aliases, duplicate_slugs,
-    playbook_frontmatter, playbook_wikilinks
+    playbook_frontmatter, playbook_wikilinks, parseable_artifacts
 - Warning-severity: hash_freshness, token_budgets, orphan_concepts,
     deprecated_concept_usage, orphaned_designs, convention_orphaned_scope,
     stack_refs_validity, design_deps_existence, aindex_entries,
@@ -33,13 +33,19 @@ from pathlib import Path
 import yaml
 
 from lexibrary.artifacts.design_file_parser import (
+    DesignFileValidationError,
     parse_design_file,
     parse_design_file_frontmatter,
     parse_design_file_metadata,
+    parse_design_file_strict,  # noqa: F401  -- looked up by name via getattr in check_parseable_artifacts
 )
 from lexibrary.config.loader import load_config
 from lexibrary.conventions.index import ConventionIndex
-from lexibrary.conventions.parser import parse_convention_file
+from lexibrary.conventions.parser import (
+    ConventionValidationError,
+    parse_convention_file,
+    parse_convention_file_strict,  # noqa: F401  -- looked up by name via getattr
+)
 from lexibrary.ignore import create_ignore_matcher
 from lexibrary.lifecycle.comments import comment_count
 from lexibrary.lifecycle.convention_comments import convention_comment_count
@@ -47,14 +53,26 @@ from lexibrary.lifecycle.deprecation import _count_commits_since, check_ttl_expi
 from lexibrary.lifecycle.design_comments import design_comment_path
 from lexibrary.linkgraph.schema import SCHEMA_VERSION, check_schema_version, set_pragmas
 from lexibrary.playbooks.index import PlaybookIndex
-from lexibrary.playbooks.parser import parse_playbook_file
-from lexibrary.stack.parser import parse_stack_post
+from lexibrary.playbooks.parser import (
+    PlaybookValidationError,
+    parse_playbook_file,
+    parse_playbook_file_strict,  # noqa: F401  -- looked up by name via getattr
+)
+from lexibrary.stack.parser import (
+    StackPostValidationError,
+    parse_stack_post,
+    parse_stack_post_strict,  # noqa: F401  -- looked up by name via getattr
+)
 from lexibrary.tokenizer.approximate import ApproximateCounter
 from lexibrary.utils.hashing import hash_file
 from lexibrary.utils.paths import DESIGNS_DIR, aindex_path
 from lexibrary.validator.report import ValidationIssue
 from lexibrary.wiki.index import ConceptIndex
-from lexibrary.wiki.parser import parse_concept_file
+from lexibrary.wiki.parser import (
+    ConceptValidationError,
+    parse_concept_file,
+    parse_concept_file_strict,  # noqa: F401  -- looked up by name via getattr
+)
 from lexibrary.wiki.patterns import HTML_COMMENT_RE as _HTML_COMMENT_RE
 from lexibrary.wiki.patterns import WIKILINK_RE as _WIKILINK_RE
 from lexibrary.wiki.resolver import UnresolvedLink, WikilinkResolver
@@ -4909,5 +4927,155 @@ def check_playbook_deprecated_ttl(
                         ),
                     )
                 )
+
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# Error-severity: parseable artifacts
+# ---------------------------------------------------------------------------
+
+
+# Per-kind dispatch table.  Each entry is (kind label, directory name under
+# .lexibrary/, glob pattern, name of the strict parser attribute on this
+# module, typed validation error class).  Parsers are looked up by name on
+# this module at call time so monkeypatching works through the standard
+# ``lexibrary.validator.checks.<name>`` boundary; designs are handled
+# separately because their tree is recursive.
+_PARSEABLE_KINDS: tuple[
+    tuple[str, str, str, str, type[Exception]],
+    ...,
+] = (
+    ("stack post", "stack", "*.md", "parse_stack_post_strict", StackPostValidationError),
+    ("concept", "concepts", "*.md", "parse_concept_file_strict", ConceptValidationError),
+    (
+        "convention",
+        "conventions",
+        "*.md",
+        "parse_convention_file_strict",
+        ConventionValidationError,
+    ),
+    ("playbook", "playbooks", "*.md", "parse_playbook_file_strict", PlaybookValidationError),
+)
+
+
+def _make_parseable_issue(
+    kind: str,
+    rel_path: str,
+    detail: str,
+    *,
+    unexpected: bool = False,
+) -> ValidationIssue:
+    """Build a ``parseable_artifacts`` finding with the parser's detail threaded through.
+
+    The strict parsers' ``*ValidationError`` already carries the failing field
+    name, the bad value, and (for enum fields) the accepted set, so the message
+    is passed through verbatim.  ``unexpected`` flags non-typed errors caught
+    defensively at the parser boundary -- their messages are prefixed so users
+    can tell apart "frontmatter says resolution_type: documentation, allowed
+    are fix/workaround/..." from "the parser blew up on a corrupt file".
+    """
+    message = f"unexpected parser error: {detail}" if unexpected else detail
+    return ValidationIssue(
+        severity="error",
+        check="parseable_artifacts",
+        message=message,
+        artifact=rel_path,
+        suggestion=(
+            f"Edit {rel_path} to fix the {kind}; the message above names the "
+            "failing field, the bad value, and (when applicable) the accepted set."
+        ),
+    )
+
+
+def _parse_with_strict(
+    md_path: Path,
+    rel_path: str,
+    kind: str,
+    parser_attr: str,
+    error_cls: type[Exception],
+) -> list[ValidationIssue]:
+    """Dispatch one file to its strict parser, converting failures to findings.
+
+    The strict parsers already convert ``yaml.YAMLError`` / ``OSError`` into
+    their typed validation errors and return ``None`` for benign cases (file
+    missing, no frontmatter), so the typed branch covers the bulk.  The bare
+    ``Exception`` branch is a deliberate boundary: a single corrupt file must
+    never crash the whole check, which is the entire reason ``lexi validate``
+    exists for malformed user data.
+    """
+    import sys  # noqa: PLC0415
+
+    self_module = sys.modules[__name__]
+    parser_fn = getattr(self_module, parser_attr)
+    try:
+        parser_fn(md_path)
+    except error_cls as exc:
+        return [_make_parseable_issue(kind, rel_path, str(exc))]
+    except Exception as exc:  # noqa: BLE001 -- defensive parser boundary
+        logger.warning(
+            "parseable_artifacts: unexpected %s while parsing %s",
+            type(exc).__name__,
+            md_path,
+            exc_info=True,
+        )
+        return [
+            _make_parseable_issue(
+                kind,
+                rel_path,
+                f"{type(exc).__name__}: {exc}",
+                unexpected=True,
+            )
+        ]
+    return []
+
+
+def check_parseable_artifacts(
+    project_root: Path,
+    lexibrary_dir: Path,
+) -> list[ValidationIssue]:
+    """Surface artifact files whose strict parser raises a validation error.
+
+    Walks each artifact directory under ``.lexibrary/`` and dispatches each
+    ``*.md`` file to its kind's strict parser variant.  Files that exist but
+    have no frontmatter, or files that don't exist on disk, are intentionally
+    ignored: the strict parsers return ``None`` for those benign cases and they
+    are not the concern of this check.
+
+    Findings emitted by this check carry the parser's full self-describing
+    detail (field name, bad value, accepted values when present) so an agent
+    reading ``lexi validate`` output has enough context to fix the file
+    without re-running the parser by hand.
+
+    Args:
+        project_root: Root directory of the project.
+        lexibrary_dir: Path to the .lexibrary directory.
+
+    Returns:
+        List of error-severity ValidationIssues, one per malformed file.
+    """
+    issues: list[ValidationIssue] = []
+
+    for kind, dir_name, pattern, parser_attr, error_cls in _PARSEABLE_KINDS:
+        kind_dir = lexibrary_dir / dir_name
+        if not kind_dir.is_dir():
+            continue
+        for md_path in sorted(kind_dir.glob(pattern)):
+            rel_path = _rel(md_path, project_root)
+            issues.extend(_parse_with_strict(md_path, rel_path, kind, parser_attr, error_cls))
+
+    designs_dir = lexibrary_dir / DESIGNS_DIR
+    if designs_dir.is_dir():
+        for md_path in sorted(designs_dir.rglob("*.md")):
+            rel_path = _rel(md_path, project_root)
+            issues.extend(
+                _parse_with_strict(
+                    md_path,
+                    rel_path,
+                    "design file",
+                    "parse_design_file_strict",
+                    DesignFileValidationError,
+                )
+            )
 
     return issues

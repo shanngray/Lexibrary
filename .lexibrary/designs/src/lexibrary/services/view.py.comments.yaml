@@ -1,0 +1,16 @@
+comments:
+- body: '_load_artifact now has a special path for kind=''stack'': it calls parse_stack_post_strict
+    instead of the lenient parse_stack_post so that StackPostValidationError (Pydantic
+    field validation failure, YAML syntax error) reaches the user as ArtifactParseError
+    with an actionable hint string. resolve_and_load catches ArtifactParseError from
+    _load_artifact and re-raises it with the correct artifact_id populated (the parser
+    sets artifact_id='''' to avoid a circular dependency on the resolved ID).'
+  date: '2026-04-26T21:40:34.980964Z'
+- body: _load_artifact now uses strict parser variants for all five artifact kinds
+    (concept, convention, playbook, design, stack). Each strict parser raises a kind-specific
+    ValidationError when frontmatter is found but invalid; _load_artifact catches
+    that and re-raises as ArtifactParseError carrying the detail as the hint. This
+    means lexi view always surfaces the field name, bad value, and (when Pydantic
+    provides it) the set of allowed values instead of the opaque 'parser returned
+    None' message.
+  date: '2026-04-26T23:08:30.307726Z'

@@ -81,3 +81,8 @@ comments:
     CHECK_TO_ACTION_KEY already maps orphaned_aindex -> fix_orphaned_aindex so the
     validator bridge handles it.'
   date: '2026-04-14T07:10:19.344929Z'
+- body: "Added parseable_artifacts to _HASH_LAYER_CHECKS. The two-pass partition is\
+    \ total/disjoint by design \u2014 leaving the new check out caused module-import\
+    \ to fail in 25 test files. Hash-layer is correct: the check only reads on-disk\
+    \ file contents (frontmatter + body), no link/symbol graph access required."
+  date: '2026-04-28T02:27:05.438118Z'

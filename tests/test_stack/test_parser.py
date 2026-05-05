@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 
-from lexibrary.stack.parser import parse_stack_post
+import pytest
+
+from lexibrary.stack.parser import (
+    StackPostValidationError,
+    parse_stack_post,
+    parse_stack_post_strict,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -818,3 +824,224 @@ class TestParseStaleAtField:
         post = parse_stack_post(p)
         assert post is not None
         assert post.frontmatter.stale_at is None
+
+
+# ---------------------------------------------------------------------------
+# Bug-fix tests: error propagation and finding header regex
+# ---------------------------------------------------------------------------
+
+_POST_INVALID_RESOLUTION_TYPE = """\
+---
+id: ST-041
+title: Resolution type documentation is not in schema
+tags:
+  - documentation
+status: resolved
+created: 2026-04-01
+author: agent-900
+resolution_type: documentation
+---
+
+## Problem
+
+This post has resolution_type set to "documentation", which is not an allowed value.
+"""
+
+_POST_INVALID_STATUS = """\
+---
+id: ST-042
+title: Invalid status value
+tags:
+  - bug
+status: unknown_status
+created: 2026-04-01
+author: agent-901
+---
+
+## Problem
+
+This post has an invalid status field.
+"""
+
+_POST_FINDING_WITH_TITLE = """\
+---
+id: ST-050
+title: Finding with em-dash title
+tags:
+  - bug
+created: 2026-04-01
+author: agent-100
+---
+
+## Problem
+
+Testing titled findings.
+
+### F1 — R-code coverage gap
+
+**Date:** 2026-04-01 | **Author:** agent-200 | **Votes:** 1
+
+The coverage gap was identified here.
+
+### F2 — Another finding title
+
+**Date:** 2026-04-02 | **Author:** agent-300 | **Votes:** 0
+
+Second finding body.
+"""
+
+_POST_FINDING_NO_TITLE = """\
+---
+id: ST-051
+title: Finding without title (backward compat)
+tags:
+  - bug
+created: 2026-04-01
+author: agent-100
+---
+
+## Problem
+
+Testing untitled findings.
+
+### F1
+
+**Date:** 2026-04-01 | **Author:** agent-200 | **Votes:** 2
+
+Plain finding without a title.
+"""
+
+_POST_FINDING_COLON_TITLE = """\
+---
+id: ST-052
+title: Finding with colon separator
+tags:
+  - bug
+created: 2026-04-01
+author: agent-100
+---
+
+## Problem
+
+Testing colon-separated finding titles.
+
+### F1: Root cause identified
+
+**Date:** 2026-04-01 | **Author:** agent-200 | **Votes:** 1
+
+The root cause is a missing null check.
+"""
+
+
+class TestStrictParserValidationErrors:
+    """parse_stack_post_strict raises StackPostValidationError for bad frontmatter."""
+
+    def test_invalid_resolution_type_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "ST-041.md"
+        p.write_text(_POST_INVALID_RESOLUTION_TYPE)
+        with pytest.raises(StackPostValidationError) as exc_info:
+            parse_stack_post_strict(p)
+        detail = exc_info.value.detail
+        # Must name the field
+        assert "resolution_type" in detail
+        # Must mention the bad value
+        assert "documentation" in detail
+
+    def test_invalid_resolution_type_lenient_returns_none(self, tmp_path: Path) -> None:
+        """parse_stack_post (lenient) still returns None for invalid resolution_type."""
+        p = tmp_path / "ST-041.md"
+        p.write_text(_POST_INVALID_RESOLUTION_TYPE)
+        result = parse_stack_post(p)
+        assert result is None
+
+    def test_invalid_status_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "ST-042.md"
+        p.write_text(_POST_INVALID_STATUS)
+        with pytest.raises(StackPostValidationError) as exc_info:
+            parse_stack_post_strict(p)
+        detail = exc_info.value.detail
+        assert "status" in detail
+        assert "unknown_status" in detail
+
+    def test_nonexistent_file_returns_none_strict(self, tmp_path: Path) -> None:
+        """Nonexistent file returns None even from the strict parser."""
+        p = tmp_path / "does-not-exist.md"
+        result = parse_stack_post_strict(p)
+        assert result is None
+
+    def test_no_frontmatter_returns_none_strict(self, tmp_path: Path) -> None:
+        """File with no frontmatter returns None even from the strict parser."""
+        p = tmp_path / "no-fm.md"
+        p.write_text(_NO_FRONTMATTER)
+        result = parse_stack_post_strict(p)
+        assert result is None
+
+    def test_valid_post_parses_strict(self, tmp_path: Path) -> None:
+        """Valid posts parse correctly via the strict parser."""
+        p = tmp_path / "ST-001.md"
+        p.write_text(_VALID_POST)
+        post = parse_stack_post_strict(p)
+        assert post is not None
+        assert post.frontmatter.id == "ST-001"
+
+
+class TestFindingHeaderWithTitle:
+    """Finding headers with optional title text parse correctly."""
+
+    def test_titled_findings_count(self, tmp_path: Path) -> None:
+        p = tmp_path / "ST-050.md"
+        p.write_text(_POST_FINDING_WITH_TITLE)
+        post = parse_stack_post(p)
+        assert post is not None
+        assert len(post.findings) == 2
+
+    def test_finding_one_title(self, tmp_path: Path) -> None:
+        p = tmp_path / "ST-050.md"
+        p.write_text(_POST_FINDING_WITH_TITLE)
+        post = parse_stack_post(p)
+        assert post is not None
+        assert post.findings[0].title == "R-code coverage gap"
+
+    def test_finding_two_title(self, tmp_path: Path) -> None:
+        p = tmp_path / "ST-050.md"
+        p.write_text(_POST_FINDING_WITH_TITLE)
+        post = parse_stack_post(p)
+        assert post is not None
+        assert post.findings[1].title == "Another finding title"
+
+    def test_finding_one_body(self, tmp_path: Path) -> None:
+        """Title text does not bleed into the finding body."""
+        p = tmp_path / "ST-050.md"
+        p.write_text(_POST_FINDING_WITH_TITLE)
+        post = parse_stack_post(p)
+        assert post is not None
+        assert "coverage gap was identified" in post.findings[0].body
+        assert "R-code coverage gap" not in post.findings[0].body
+
+    def test_untitled_finding_backward_compat(self, tmp_path: Path) -> None:
+        """### F1 with no title sets title to empty string."""
+        p = tmp_path / "ST-051.md"
+        p.write_text(_POST_FINDING_NO_TITLE)
+        post = parse_stack_post(p)
+        assert post is not None
+        assert len(post.findings) == 1
+        assert post.findings[0].title == ""
+        assert post.findings[0].number == 1
+
+    def test_colon_separator_title(self, tmp_path: Path) -> None:
+        """### F1: Title text uses colon separator."""
+        p = tmp_path / "ST-052.md"
+        p.write_text(_POST_FINDING_COLON_TITLE)
+        post = parse_stack_post(p)
+        assert post is not None
+        assert len(post.findings) == 1
+        assert post.findings[0].title == "Root cause identified"
+
+    def test_body_terminates_on_titled_finding_header(self, tmp_path: Path) -> None:
+        """Body section extraction still terminates at a titled ### F{n} header."""
+        p = tmp_path / "ST-050.md"
+        p.write_text(_POST_FINDING_WITH_TITLE)
+        post = parse_stack_post(p)
+        assert post is not None
+        # Problem should only contain the problem text, not the finding title
+        assert "R-code coverage gap" not in post.problem

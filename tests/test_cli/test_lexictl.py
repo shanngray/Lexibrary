@@ -802,9 +802,7 @@ Project root
         monkeypatch.setattr(lexibrary, "__version__", "9.9.9")
 
         project = _setup_validate_project(tmp_path)
-        (project / ".lexibrary" / "config.yaml").write_text(
-            "scope_roots:\n  - path: .\n"
-        )
+        (project / ".lexibrary" / "config.yaml").write_text("scope_roots:\n  - path: .\n")
 
         result = self._invoke(project, ["validate"])
         output = result.output  # type: ignore[union-attr]
@@ -1140,9 +1138,7 @@ class TestUpgradeCommand:
         """A graysky-v2-style legacy project comes out fully upgraded on disk."""
         (tmp_path / ".lexibrary").mkdir()
         (tmp_path / ".lexibrary" / "config.yaml").write_text(
-            "scope_root: .\n"
-            "project_name: legacy\n"
-            "agent_environment:\n  - claude\n"
+            "scope_root: .\nproject_name: legacy\nagent_environment:\n  - claude\n"
         )
         (tmp_path / ".gitignore").write_text(".lexibrary/index.db\n", encoding="utf-8")
 

@@ -322,14 +322,22 @@ def stack_view(
     ],
 ) -> None:
     """Return the full content of a Stack post including findings, votes, and comments."""
-    from lexibrary.stack.parser import parse_stack_post  # noqa: PLC0415
+    from lexibrary.stack.parser import (  # noqa: PLC0415
+        StackPostValidationError,
+        parse_stack_post_strict,
+    )
 
     project_root = require_project_root()
     post_path = _require_post(project_root, post_id)
 
-    post = parse_stack_post(post_path)
+    try:
+        post = parse_stack_post_strict(post_path)
+    except StackPostValidationError as exc:
+        error(f"Failed to parse post {post_id} ({post_path}):")
+        hint(exc.detail)
+        raise typer.Exit(1) from None
     if post is None:
-        error(f"Failed to parse post: {post_id}")
+        error(f"Post {post_id} has no frontmatter or could not be read: {post_path}")
         raise typer.Exit(1)
 
     fm = post.frontmatter

@@ -118,6 +118,10 @@ _HASH_LAYER_CHECKS: frozenset[str] = frozenset(
         "stack_frontmatter",
         "iwh_frontmatter",
         "playbook_frontmatter",
+        # parseable_artifacts dispatches strict parsers against on-disk file
+        # contents only — no link/symbol graph reads — so it belongs in the
+        # hash-layer subset alongside the other frontmatter validators.
+        "parseable_artifacts",
     }
 )
 

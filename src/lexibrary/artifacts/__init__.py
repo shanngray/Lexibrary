@@ -16,6 +16,10 @@ from lexibrary.artifacts.convention import (
     convention_slug,
 )
 from lexibrary.artifacts.design_file import DesignFile, DesignFileFrontmatter, StalenessMetadata
+from lexibrary.artifacts.design_file_parser import (
+    DesignFileValidationError,
+    parse_design_file_frontmatter_strict,
+)
 from lexibrary.artifacts.playbook import (
     PlaybookFile,
     PlaybookFileFrontmatter,
@@ -33,6 +37,7 @@ __all__ = [
     "ConventionFileFrontmatter",
     "DesignFile",
     "DesignFileFrontmatter",
+    "DesignFileValidationError",
     "PlaybookFile",
     "PlaybookFileFrontmatter",
     "StalenessMetadata",
@@ -40,6 +45,7 @@ __all__ = [
     "concept_slug",
     "convention_file_path",
     "convention_slug",
+    "parse_design_file_frontmatter_strict",
     "playbook_file_path",
     "playbook_slug",
     "slugify",

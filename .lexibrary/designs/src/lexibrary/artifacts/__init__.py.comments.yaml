@@ -1,0 +1,6 @@
+comments:
+- body: Added DesignFileValidationError and parse_design_file_frontmatter_strict to
+    __init__.py exports to make them reachable as lexibrary.artifacts.*. These were
+    already importable directly from design_file_parser; the re-export follows the
+    same pattern established for all other public parser/model symbols in this package.
+  date: '2026-04-27T18:06:29.831255Z'
