@@ -99,6 +99,7 @@ TODO.md
 data-gym-cache/
 .agents/
 .codex/
+.lexibrary/lexictl.log
 
 # Dolt database files (added by bd init)
 .dolt/
