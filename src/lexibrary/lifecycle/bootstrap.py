@@ -17,7 +17,6 @@ from lexibrary.archivist.change_checker import ChangeLevel, check_change
 from lexibrary.archivist.pipeline import (
     FileResult,
     _is_binary,
-    _is_within_any_scope,
     _refresh_parent_aindex,
     update_file,
 )

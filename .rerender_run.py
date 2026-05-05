@@ -5,7 +5,6 @@ Usage: python3 .rerender_run.py <dir-relative-to-src-lexibrary>
 """
 from __future__ import annotations
 
-import os
 import pathlib
 import subprocess
 import sys

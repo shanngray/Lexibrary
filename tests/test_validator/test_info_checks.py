@@ -20,7 +20,6 @@ from lexibrary.validator.checks import (
     check_orphan_artifacts,
     check_stack_staleness,
 )
-
 from tests._index_fixtures import _create_index_with_links
 
 # ---------------------------------------------------------------------------

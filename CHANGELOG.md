@@ -2,6 +2,28 @@
 
 All notable changes to Lexibrary are documented in this file.
 
+## [0.7.0] - 2026-05-06
+
+### Added
+- **Project upgrade pipeline** — Added `lexictl upgrade` with ordered,
+  idempotent steps for config migrations, version stamping, skeleton
+  directories, gitignore patterns, agent rules, git hooks, and optional full
+  default config section materialization.
+- **Strict artifact parsing** — Added strict parser variants and typed
+  validation errors for design files, concepts, conventions, playbooks, and
+  Stack posts so malformed frontmatter can produce actionable validation
+  output.
+- **Parseable artifact validation** — Added a `parseable_artifacts` validator
+  check that reports malformed library artifacts without crashing the full
+  validation run.
+
+### Changed
+- **Setup workflow** — Replaced `lexictl setup` guidance with the new
+  `lexictl upgrade` workflow across CLI help and documentation.
+- **Design structure validation** — Design files may satisfy the public-surface
+  requirement with either `## Interface Contract` or `## Re-exports`, matching
+  aggregator design output.
+
 ## [0.6.3] - 2026-04-22
 
 ### Added

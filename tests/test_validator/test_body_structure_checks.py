@@ -236,7 +236,7 @@ class TestCheckDesignStructure:
         assert h1_issues[0].check == "design_structure"
 
     def test_missing_interface_contract_reports_warning(self, tmp_path: Path) -> None:
-        """When a design file lacks both Interface Contract and Re-exports, a warning is returned."""
+        """Warn when a design file lacks Interface Contract and Re-exports."""
         project_root = tmp_path
         lexibrary_dir = tmp_path / ".lexibrary"
         lexibrary_dir.mkdir()
